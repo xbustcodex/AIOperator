@@ -1,0 +1,21 @@
+# executors/file_executor.py
+from executors.shell_executor import ShellExecutor
+
+class FileExecutor:
+    @staticmethod
+    def create_folder(path: str) -> str:
+        return ShellExecutor.run(f"mkdir -p '{path}'")
+
+    @staticmethod
+    def write_file(path: str, content: str) -> str:
+        safe = content.replace("'", "'\''")
+        cmd = f"echo '{safe}' > '{path}'"
+        return ShellExecutor.run(cmd)
+
+    @staticmethod
+    def read_file(path: str) -> str:
+        return ShellExecutor.run(f"cat '{path}'")
+
+    @staticmethod
+    def list_dir(path: str) -> str:
+        return ShellExecutor.run(f"ls -la '{path}'")

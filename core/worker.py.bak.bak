@@ -1,0 +1,53 @@
+#!/data/data/com.termux/files/usr/bin/python
+import time
+from core.agent import Agent
+from services.logger import Logger
+
+
+class AIWorker:
+
+    def __init__(self):
+        self.agent = Agent()
+        self.logger = Logger()
+        self.running = True
+
+    def heartbeat(self):
+        self.logger.log("Worker heartbeat")
+
+    def observe(self):
+        return {
+            "device": "android",
+            "status": "online"
+        }
+
+    def cycle(self):
+
+        self.heartbeat()
+
+        state = self.observe()
+
+        
+        result =                                  self.agent.run(str(state)) 
+
+        self.logger.log({
+            "state": state,
+            "result": result
+        })
+
+    def run(self):
+
+        while self.running:
+            try:
+                self.cycle()
+
+            except Exception as e:
+                self.logger.log(
+                    f"Worker error: {e}"
+                )
+
+            time.sleep(60)
+
+
+if __name__ == "__main__":
+    worker = AIWorker()
+    worker.run()

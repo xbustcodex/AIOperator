@@ -1,0 +1,42 @@
+# core/validator.py
+
+BLOCKED_PATHS = [
+    "/system",
+    "/vendor",
+    "/data/adb",
+    "/proc",
+    "/dev"
+]
+
+DANGEROUS_COMMANDS = [
+    "rm -rf",
+    "dd ",
+    "mkfs",
+    "reboot",
+    "shutdown"
+]
+
+class Validator:
+    @staticmethod
+    def is_path_allowed(path: str) -> bool:
+        return not any(path.startswith(p) for p in BLOCKED_PATHS)
+
+    @staticmethod
+    def is_command_safe(cmd: str) -> bool:
+        return not any(dc in cmd for dc in DANGEROUS_COMMANDS)
+
+    @staticmethod
+    def validate_action(action: dict) -> bool:
+        # Check type and params
+        if "type" not in action or "params" not in action:
+            return False
+        # Check paths
+        params = action.get("params", {})
+        path = params.get("path", "")
+        if path and not Validator.is_path_allowed(path):
+            return False
+        # Check command safety
+        command = params.get("command", "")
+        if command and not Validator.is_command_safe(command):
+            return False
+        return True

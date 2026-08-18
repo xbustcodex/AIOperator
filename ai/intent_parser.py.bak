@@ -1,0 +1,19 @@
+# ai/intent_parser.py
+import json
+
+class IntentParser:
+    @staticmethod
+    def parse(json_str: str) -> list:
+        """Parse AI JSON safely and return list of actions"""
+        try:
+            data = json.loads(json_str)
+            actions = data.get("actions", [])
+            if not isinstance(actions, list):
+                return []
+            valid_actions = []
+            for a in actions:
+                if isinstance(a, dict) and "type" in a and "params" in a:
+                    valid_actions.append(a)
+            return valid_actions
+        except json.JSONDecodeError:
+            return []

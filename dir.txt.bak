@@ -1,0 +1,24 @@
+AIOperator/
+├── ai/
+│   ├── LLMClient.kt
+│   ├── PromptBuilder.kt
+│   └── IntentParser.kt
+│
+├── core/
+│   ├── ActionRouter.kt
+│   ├── ActionValidator.kt
+│   └── ExecutionLogger.kt
+│
+├── executors/
+│   ├── FileExecutor.kt
+│   ├── TermuxExecutor.kt
+│   ├── AppExecutor.kt
+│   ├── ShellExecutor.kt   ← Shizuku
+│   └── UiExecutor.kt      ← Accessibility
+│
+├── services/
+│   ├── AiForegroundService.kt
+│   └── AccessibilityService.kt
+│
+└── ui/
+    └── MainActivity.kt

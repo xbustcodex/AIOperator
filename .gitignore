@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+
+models/*.gguf
+
+memory/history.json
+
+*.log
+
+.env
+.env.*
+
+.vscode/
+.idea/
