@@ -21,6 +21,17 @@ def setup_logging(log_dir: str, level: str = "INFO", console: bool = True) -> No
     root.setLevel(level_value)
 
     for handler in list(root.handlers):
+        try:
+            handler.acquire()
+            handler.flush()
+            handler.close()
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                handler.release()
+            except Exception:  # noqa: BLE001
+                pass
         root.removeHandler(handler)
 
     handlers = [logging.FileHandler(log_file, encoding="utf-8")]

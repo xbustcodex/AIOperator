@@ -1,7 +1,16 @@
 {
   "logging_level": "INFO",
-  "ai_providers": {},
+  "ai_providers": {
+    "remote": {
+      "api_key": "",
+      "base_url": "https://api.openai.com/v1",
+      "model": ""
+    }
+  },
   "permissions": {},
   "capabilities": {},
+  "security": {
+    "elevation_allow": []
+  },
   "install_path": "~/.buster/"
 }
