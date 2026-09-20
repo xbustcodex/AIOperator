@@ -1,0 +1,7 @@
+{
+  "logging_level": "INFO",
+  "ai_providers": {},
+  "permissions": {},
+  "capabilities": {},
+  "install_path": "~/.buster/"
+}

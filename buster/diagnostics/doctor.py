@@ -1,0 +1,38 @@
+"""Environment health checks for Buster OS."""
+
+import os
+import platform
+import sys
+from dataclasses import dataclass, field
+
+from buster.android_integration.device import is_termux
+from buster.version import get_version
+
+
+@dataclass
+class DoctorReport:
+    checks: list[dict] = field(default_factory=list)
+
+    def add(self, name: str, ok: bool, detail: str = "") -> None:
+        self.checks.append({"name": name, "ok": ok, "detail": detail})
+
+    @property
+    def failed(self) -> int:
+        return sum(1 for c in self.checks if not c["ok"])
+
+
+def run_doctor() -> DoctorReport:
+    report = DoctorReport()
+
+    report.add("python-version",
+               ok=sys.version_info >= (3, 10),
+               detail=f"{platform.python_version()} (>= 3.10 required)")
+    report.add("termux-environment",
+               ok=is_termux(),
+               detail=os.environ.get("PREFIX", "not set"))
+    report.add("buster-install",
+               ok=os.path.isdir(os.path.expanduser("~/.buster")),
+               detail=os.path.expanduser("~/.buster"))
+    report.add("buster-version", ok=True, detail=f"v{get_version()}")
+
+    return report
