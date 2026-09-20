@@ -45,6 +45,31 @@ python installer.py
 Creates `~/.buster/` with config, logs, cache, state, memory, workspaces and
 backups, and writes an initial configuration.
 
+## Bootstrap
+
+Bootstrap materializes the runtime environment: install layout, default
+permission grants (from `security.default_grants`), initial memory/experience
+seeds and world-model facts. Idempotent — re-running is a no-op.
+
+```sh
+python bootstrap.py                  # bootstrap and exit
+python bootstrap.py --check          # bootstrap + doctor health checks
+python bootstrap.py --shell          # bootstrap + interactive shell
+python bootstrap.py --skip-grants    # skip default grants
+```
+
+## Build
+
+The build script compiles every module, runs the full test suite,
+smoke-tests the CLI, and packages a clean distribution zip.
+
+```sh
+python build.py                      # compile + tests + package
+python build.py --skip-tests         # skip the test run
+```
+
+Produces `dist/buster-os-<version>.zip`.
+
 ## Usage
 
 ```sh

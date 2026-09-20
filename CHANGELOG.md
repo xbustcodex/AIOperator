@@ -70,7 +70,11 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Engineering
 - Idempotent installer and kernel launcher.
-- Documentation (`architecture.md`, README usage).
+- Runtime bootstrap (`bootstrap.py` / `buster.bootstrap`): install layout,
+  default grants, memory/world seeds, first-run marker, `--shell`/`--check`.
+- Build script (`build.py`): compile check, full test suite, CLI smoke test,
+  clean distribution packaging under `dist/`.
+- Documentation (`architecture.md`, README usage and bootstrap/build guide).
 - Test suite: config, event router, kernel, scheduler, permissions, audit,
   capabilities (registry/adapters/impl), memory, security, AI, perception,
-  shell parser/session, orchestration, and end-to-end integration.
+  shell parser/session, orchestration, bootstrap, and end-to-end integration.
