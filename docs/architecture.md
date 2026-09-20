@@ -59,8 +59,13 @@ buster/
 │   │   ├── registry.py     # Command registry
 │   │   ├── results.py      # StructuredResult rendering
 │   │   └── session.py      # REPL + kernel dispatch + job control
+│   ├── runtime.py          # Single-runtime lock, daemon server, RPC client
+│   ├── bootstrap.py        # Offline install/init + runtime seed
 │   ├── cli/                # `buster` command entry points
-│   ├── android_integration/ # Termux / device detection
+│   │   ├── main.py         # dispatch
+│   │   └── commands.py     # lifecycle (bootstrap/start/status/shell/stop)
+│   │                       # + management commands
+│   ├── android_integration/# Termux / device detection
 │   ├── diagnostics/        # Doctor / health checks
 │   ├── workspace/          # Isolated workspaces with traversal guards
 │   └── tests/              # Unit + integration + compatibility tests

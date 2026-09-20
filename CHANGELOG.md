@@ -70,11 +70,20 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Engineering
 - Idempotent installer and kernel launcher.
-- Runtime bootstrap (`bootstrap.py` / `buster.bootstrap`): install layout,
-  default grants, memory/world seeds, first-run marker, `--shell`/`--check`.
+- Offline bootstrap (`bootstrap.py` / `buster bootstrap`) that never boots a
+  kernel; runtime seeds applied by the daemon at `start`.
+- Single-runtime lifecycle CLI: `bootstrap` -> `start` -> `status` -> `shell`
+  -> `stop`, guarded by an atomic PID + heartbeat lock that refuses a second
+  runtime and is released on clean shutdown.
+- Runtime daemon with a deterministic file-based JSON request/response
+  transport (`install/state/rpc/`), verified by `check_runtime.py`
+  (lock semantics, full op surface, cross-process boot cycle).
+- Windows-safe process-liveness probe (ctypes `OpenProcess` instead of
+  `os.kill(pid, 0)`, which hangs/fails unpredictably on Store builds).
 - Build script (`build.py`): compile check, full test suite, CLI smoke test,
-  clean distribution packaging under `dist/`.
-- Documentation (`architecture.md`, README usage and bootstrap/build guide).
+  runtime check, clean distribution packaging under `dist/`.
+- Documentation (`architecture.md`, README usage and lifecycle guide).
 - Test suite: config, event router, kernel, scheduler, permissions, audit,
   capabilities (registry/adapters/impl), memory, security, AI, perception,
-  shell parser/session, orchestration, bootstrap, and end-to-end integration.
+  shell parser/session, orchestration, bootstrap, runtime, and end-to-end
+  integration.

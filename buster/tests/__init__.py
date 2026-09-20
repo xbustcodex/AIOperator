@@ -1,7 +1,9 @@
-"""Test suite for Buster OS."""
+"""Test suite for Buster OS.
 
-import sys
+Tests are designed to be discovered from the repository root:
 
-os_path = __import__("os").path
+    python -m unittest discover -s buster/tests -p "test_*.py"
 
-sys.path.insert(0, os_path.abspath(os_path.join(os_path.dirname(__file__), "..")))
+Keeping the package directory out of ``sys.path`` avoids shadowing
+stdlib modules such as ``logging``.
+"""

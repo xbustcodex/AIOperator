@@ -1,63 +1,70 @@
-"""Tests for the runtime bootstrap and build script."""
+"""Tests for the offline bootstrap, runtime seed and build script."""
 
 import os
 import sys
 import tempfile
 import unittest
 
-from buster.bootstrap import BootstrapManager
+from buster.bootstrap import bootstrap_offline, seed_runtime
 from buster.config import Config
 from buster.kernel.core import Kernel
 
 
-def _fresh_kernel() -> Kernel:
+def _install() -> tuple:
     install = tempfile.mkdtemp()
-    config = Config(config_path=os.path.join(install, "config.json"))
-    config.set("install_path", install + os.sep)
-    return Kernel(config=config)
+    config = Config(config_path=os.path.join(install, "config", "config.json"))
+    return install, config
 
 
-class BootstrapTests(unittest.TestCase):
+class BootstrapOfflineTests(unittest.TestCase):
     def test_first_run_then_idempotent(self):
-        kernel = _fresh_kernel()
-        kernel.start()
-        try:
-            manager = BootstrapManager(kernel)
-            first = manager.run()
-            self.assertTrue(first["first_run"])
-            self.assertGreaterEqual(len(first["layout"]), 1)
-            second = manager.run()
-            self.assertFalse(second["first_run"])
-            self.assertEqual(second["layout"], [])
-        finally:
-            kernel.stop()
+        install, config = _install()
+        first = bootstrap_offline(config, install_path=install)
+        self.assertTrue(first["first_run"])
+        self.assertGreaterEqual(len(first["layout_created"]), 1)
+        second = bootstrap_offline(config, install_path=install)
+        self.assertFalse(second["first_run"])
+        self.assertEqual(second["layout_created"], [])
 
-    def test_default_grants_applied_from_config(self):
+    def test_never_constructs_kernel(self):
+        import buster.kernel.core as core_module
+        calls = []
+        original = core_module.Kernel
+        def spy(*a, **k):
+            calls.append(True)
+            return original(*a, **k)
+        core_module.Kernel = spy
+        install, config = _install()
+        try:
+            bootstrap_offline(config, install_path=install)
+        finally:
+            core_module.Kernel = original
+        self.assertEqual(calls, [])
+
+    def test_default_config_written_once(self):
+        install, config = _install()
+        bootstrap_offline(config, install_path=install)
+        self.assertTrue(os.path.isfile(config.config_path))
+        before = os.path.getmtime(config.config_path)
+        bootstrap_offline(config, install_path=install)
+        self.assertEqual(os.path.getmtime(config.config_path), before)
+
+
+class SeedRuntimeTests(unittest.TestCase):
+    def test_seeds_once_and_idempotent(self):
         install = tempfile.mkdtemp()
         config = Config(config_path=os.path.join(install, "config.json"))
         config.set("install_path", install + os.sep)
-        config.set_nested("security.default_grants", ["android.info", "python.version"])
         kernel = Kernel(config=config)
         kernel.start()
         try:
-            manager = BootstrapManager(kernel)
-            summary = manager.run()
-            self.assertIn("android.info", summary["grants_applied"])
-            self.assertIn("python.version", summary["grants_applied"])
-            self.assertTrue(kernel.permissions.check("android.info").allowed)
-        finally:
-            kernel.stop()
-
-    def test_seeds_memory_and_world_model(self):
-        kernel = _fresh_kernel()
-        kernel.start()
-        try:
-            manager = BootstrapManager(kernel)
-            summary = manager.run()
-            self.assertGreaterEqual(kernel.memory.experience.count(), 1)
+            first = seed_runtime(kernel)
+            self.assertTrue(first["seeded"])
             self.assertEqual(kernel.memory.knowledge.recall("bootstrap.version"), "0.1.0")
-            self.assertEqual(kernel.world_model.get_fact("install_path"),
-                             summary["install_path"])
+            self.assertGreaterEqual(kernel.memory.experience.count(), 1)
+            second = seed_runtime(kernel)
+            self.assertFalse(second["seeded"])
+            self.assertEqual(kernel.memory.experience.count(), 1)
         finally:
             kernel.stop()
 
@@ -69,7 +76,6 @@ class BuildScriptTests(unittest.TestCase):
         build_path = os.path.join(repo, "build.py")
         if not os.path.isfile(build_path):
             self.skipTest("build.py not present")
-        # Run build in non-test mode to avoid recursive test discovery.
         result = __import__("subprocess").run(
             [sys.executable, "-W", "ignore", build_path, "--skip-tests"],
             cwd=repo, capture_output=True, text=True, timeout=240,

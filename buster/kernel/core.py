@@ -41,6 +41,7 @@ class Kernel:
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         self.state = "created"
+        self.runtime_lock = None  # set by RuntimeServer when running as daemon
 
         # -- core control plane -------------------------------------
         self.event_router = EventRouter()
@@ -137,6 +138,9 @@ class Kernel:
         self.cap.shutdown()
         self.perception.shutdown()
         self.ai.providers.shutdown()
+
+        if self.runtime_lock is not None:
+            self.runtime_lock.release()
 
         self.state = "stopped"
         self.logger.info("Buster OS kernel stopped.")

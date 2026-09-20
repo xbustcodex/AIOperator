@@ -232,6 +232,15 @@ class InteractiveShell:
         goal = " ".join(cmd.args)
         if not goal:
             return StructuredResult.failure("plan", "usage: plan <goal text>")
+        runner = getattr(self.kernel, "run_plan", None)
+        if runner is not None:
+            run = runner(goal)
+            body = [f"status: {run.get('status')}"]
+            if run.get("error"):
+                body.append(f"error: {run['error']}")
+            if run.get("result") is not None:
+                body.append(json.dumps(run["result"], default=str, indent=2))
+            return StructuredResult.success("plan", "\n".join(body))
         from buster.agents.orchestration import AgentOrchestrator
         agent = AgentOrchestrator(kernel=self.kernel)
         run = agent.run(goal)

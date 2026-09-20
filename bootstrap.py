@@ -1,88 +1,69 @@
 """Buster OS bootstrap entry point.
 
-Boots the kernel, materializes the environment (layout, grants, seeds),
-runs optional doctor checks, and can drop into the interactive shell.
+Offline installation/initialization only: materializes the directory
+layout, writes default configuration and records the first-run marker.
+Aligns with the lifecycle command ``buster bootstrap``.
 
-Usage:
-    python bootstrap.py            # bootstrap and exit
-    python bootstrap.py --check    # bootstrap + doctor health checks
-    python bootstrap.py --shell    # bootstrap + interactive shell
-    python bootstrap.py --skip-grants   # do not apply default grants
+    python bootstrap.py                    # offline bootstrap
+    python bootstrap.py --check            # bootstrap + doctor checks
+    python bootstrap.py --shell            # bootstrap then start + shell
+    python bootstrap.py --install-path P   # override install directory
 """
 
 import argparse
+import os
 import sys
 
 from buster.config import Config
-from buster.kernel.core import Kernel
-from buster.version import get_version
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="buster-bootstrap",
-        description="Bootstrap the Buster OS environment.",
+        description="Offline bootstrap (installation) for Buster OS.",
     )
     parser.add_argument("--shell", action="store_true",
-                        help="launch the interactive shell after bootstrapping")
+                        help="bootstrap, then start the runtime and enter the shell")
     parser.add_argument("--check", action="store_true",
                         help="run doctor health checks after bootstrapping")
-    parser.add_argument("--skip-grants", action="store_true",
-                        help="skip applying security default grants")
     parser.add_argument("--install-path", default=None,
-                        help="override the install path (used by build/tests)")
+                        help="override the install path")
     return parser
 
 
 def main(argv: list | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
 
-    config = Config()
-    if args.install_path:
-        config.set("install_path", args.install_path)
+    install = args.install_path or Config().get(
+        "install_path", os.path.expanduser("~/.buster/"))
+    config = Config(config_path=os.path.join(install, "config", "config.json"))
 
-    from buster.bootstrap import BootstrapManager
-    from buster.logging import setup_logging
+    from buster.bootstrap import bootstrap_offline
+    summary = bootstrap_offline(config, install_path=install)
 
-    install_path = config.get("install_path", sys_generic_home() + "/.buster/")
-    setup_logging(install_path + "/logs", config.get("logging_level", "INFO"))
+    print(f"Buster OS {summary['version']} bootstrap complete.")
+    print(f"  install:   {summary['install_path']}")
+    print(f"  layout:    {summary['layout_created'] or '(already present)'}")
+    print(f"  first_run: {summary['first_run']}")
 
-    kernel = Kernel(config=config)
-    kernel.start()
-    try:
-        bootstrap = BootstrapManager(kernel)
-        summary = bootstrap.run(apply_grants=not args.skip_grants)
-        kernel.world_model.component_status("bootstrap", "done")
+    if args.check:
+        from buster.diagnostics.doctor import run_doctor
+        report = run_doctor()
+        print()
+        for check in report.checks:
+            state = "PASS" if check["ok"] else "FAIL"
+            print(f"  [{'x' if check['ok'] else ' '}] {check['name']:<22} {state} {check['detail']}")
+        if report.failed:
+            print(f"\n{report.failed} check(s) failed.")
+            return 1
 
-        print(f"Buster OS {summary['version']} bootstrapped.")
-        print(f"  install:   {summary['install_path']}")
-        print(f"  layout:    {len(summary['layout'])} dir(s) ready")
-        print(f"  grants:    {summary['grants_applied'] or '(none)'}")
-        print(f"  first_run: {summary['first_run']}")
-
-        if args.check:
-            from buster.diagnostics.doctor import run_doctor
-            report = run_doctor()
-            print()
-            for check in report.checks:
-                state = "PASS" if check["ok"] else "FAIL"
-                print(f"  [{'x' if check['ok'] else ' '}] {check['name']:<22} {state} {check['detail']}")
-            if report.failed:
-                print(f"\n{report.failed} check(s) failed.")
-                return 1
-
-        if args.shell:
-            from buster.shell.session import InteractiveShell
-            return InteractiveShell(kernel=kernel).repl()
-        return 0
-    finally:
-        kernel.stop()
-
-
-def sys_generic_home() -> str:
-    import os
-    return os.path.expanduser("~")
+    if args.shell:
+        from buster.cli.commands import cmd_start, cmd_shell
+        code = cmd_start(["--install-path", install])
+        if code != 0:
+            return code
+        return cmd_shell(["--install-path", install])
+    return 0
 
 
 if __name__ == "__main__":

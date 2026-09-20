@@ -84,13 +84,14 @@ def unit_tests() -> bool:
 
 
 def cli_smoke() -> bool:
-    step("CLI smoke test")
+    step("CLI smoke + runtime checks")
     ok = True
     checks = [
         (["-m", "buster.cli", "version"], "version"),
         (["-m", "buster.cli", "help"], "help"),
         (["-m", "buster.cli", "doctor"], "doctor"),
         (["launcher.py"], "launcher"),
+        (["buster/tests/check_runtime.py"], "runtime"),
     ]
     for command, label in checks:
         result = run(command)

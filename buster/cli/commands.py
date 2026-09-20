@@ -1,38 +1,143 @@
-"""Console commands for the Buster CLI."""
+"""Console commands for the Buster CLI.
+
+Lifecycle (single-runtime discipline):
+    buster bootstrap   offline install/init (never boots a Kernel)
+    buster start       bring the single runtime online (daemon)
+    buster status      read runtime lock + heartbeat (no local Kernel)
+    buster shell       interactive shell attached to the live runtime
+    buster stop        shut the live runtime down
+
+Management commands route through RPC when a runtime is online, otherwise
+fall back to a transient kernel that boots, acts and shuts down.
+"""
 
 import json
 import os
 import sys
+import time
 
 from buster.config import Config
-from buster.kernel.core import Kernel
 from buster.version import get_version
 
+DEFAULT_INSTALL = os.path.expanduser("~/.buster/")
 
-def _instance() -> Kernel:
-    return Kernel(config=Config())
+
+# --------------------------------------------------------------------------
+# install-path resolution
+# --------------------------------------------------------------------------
+
+
+def _install_path(args) -> str:
+    for i, arg in enumerate(args):
+        if arg == "--install-path" and i + 1 < len(args):
+            return args[i + 1]
+    return Config().get("install_path", DEFAULT_INSTALL)
+
+
+# --------------------------------------------------------------------------
+# lifecycle
+# --------------------------------------------------------------------------
+
+
+def cmd_bootstrap(args) -> int:
+    install = _install_path(args)
+    config = Config(config_path=os.path.join(install, "config", "config.json"))
+    from buster.bootstrap import bootstrap_offline
+    summary = bootstrap_offline(config, install_path=install)
+    print(f"Buster OS {summary['version']} bootstrap complete.")
+    print(f"  install:   {summary['install_path']}")
+    print(f"  layout:    {summary['layout_created'] or '(already present)'}")
+    print(f"  first_run: {summary['first_run']}")
+    return 0
+
+
+def cmd_daemon(args) -> int:
+    from buster.runtime import run_daemon
+    return run_daemon(_install_path(args))
 
 
 def cmd_start(args) -> int:
-    kernel = _instance()
-    kernel.start()
-    print(f"Buster OS kernel {get_version()} started.")
-    print(f"  state:        {kernel.status()['state']}")
-    print(f"  capabilities: {', '.join(kernel.cap.list_capabilities())}")
+    from buster.runtime import RuntimeLock, spawn_daemon, wait_online
+    install = _install_path(args)
+    if RuntimeLock(install).is_online():
+        print("[ERROR] a Buster runtime is already online.", file=sys.stderr)
+        print("        Refusing to create a competing runtime.", file=sys.stderr)
+        return 1
+    spawn_daemon(install)
+    if not wait_online(install):
+        print("[ERROR] runtime did not come online.", file=sys.stderr)
+        return 1
+    info = RuntimeLock(install).read() or {}
+    print(f"Buster runtime online (pid {info.get('pid')}).")
+    print("Run 'buster status', 'buster shell' or 'buster stop'.")
     return 0
 
 
 def cmd_status(args) -> int:
-    kernel = _instance()
-    status = kernel.status()
-    print(f"State:     {status['state']}")
-    print(f"Version:   {status['version']}")
-    print(f"EventBus:  {'running' if status['event_router_running'] else 'stopped'}")
-    print(f"Scheduler: {'running' if status['scheduler_running'] else 'stopped'}")
-    print(f"Providers: {', '.join(status['ai_providers'])}")
-    print(f"Capabil. : {', '.join(status['capabilities']) or 'none'}")
-    print(f"Agents:    {', '.join(status['agents']) or 'none'}")
-    print(f"Jobs:      {len(status['jobs'])}")
+    from buster.runtime import RuntimeLock
+    install = _install_path(args)
+    lock = RuntimeLock(install)
+    info = lock.read()
+    online = lock.is_online()
+    print(f"State:     {'running' if online else 'offline'}")
+    if info:
+        print(f"PID:       {info.get('pid')}")
+        print(f"Since:     {time.ctime(info.get('at', 0))}")
+    if not online:
+        return 1
+    heartbeat = _read_heartbeat(install)
+    if heartbeat:
+        print(f"Version:   {heartbeat.get('version', '?')}")
+        print(f"Kernel:    {heartbeat.get('state', '?')}")
+        print(f"EventBus:  {'running' if heartbeat.get('event_router_running') else 'stopped'}")
+        print(f"Scheduler: {'running' if heartbeat.get('scheduler_running') else 'stopped'}")
+        print(f"Capabil. : {', '.join(heartbeat.get('capabilities', [])) or 'none'}")
+        print(f"Providers: {', '.join(heartbeat.get('ai_providers', [])) or 'none'}")
+    return 0
+
+
+def cmd_shell(args) -> int:
+    from buster.runtime import RuntimeClient, RemoteKernel, RuntimeOfflineError
+    from buster.shell.session import InteractiveShell
+    install = _install_path(args)
+    client = RuntimeClient(install)
+    if not client.is_online():
+        print("[ERROR] no runtime online. Run 'buster start' first.", file=sys.stderr)
+        return 1
+    return InteractiveShell(kernel=RemoteKernel(client)).repl()
+
+
+def cmd_stop(args) -> int:
+    from buster.runtime import RuntimeClient, RuntimeOfflineError, wait_offline
+    install = _install_path(args)
+    client = RuntimeClient(install)
+    if not client.is_online():
+        print("Runtime already offline.")
+        return 0
+    try:
+        client.rpc("shutdown")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ERROR] send stop failed: {exc}", file=sys.stderr)
+        return 1
+    if not wait_offline(install):
+        print("[ERROR] runtime did not stop cleanly.", file=sys.stderr)
+        return 1
+    print("Buster runtime stopped cleanly.")
+    return 0
+
+
+def _read_heartbeat(install: str) -> dict | None:
+    import json as _json
+    path = os.path.join(install, "state", "runtime.status.json")
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return _json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def cmd_version(args) -> int:
+    print(get_version())
     return 0
 
 
@@ -52,82 +157,113 @@ def cmd_doctor(args) -> int:
     return 0
 
 
-def cmd_version(args) -> int:
-    print(get_version())
-    return 0
+# --------------------------------------------------------------------------
+# management (RPC-first, transient-kernel fallback)
+# --------------------------------------------------------------------------
 
 
-def cmd_shell(args) -> int:
-    from buster.shell.session import InteractiveShell
-    kernel = _instance()
-    kernel.start()
-    try:
-        shell = InteractiveShell(kernel=kernel)
-        return shell.repl()
-    finally:
-        kernel.stop()
+def _client_or_kernel(install: str):
+    """Resolve an execution target: RPC remote or a transient local kernel."""
+    from buster.runtime import RuntimeClient
+    client = RuntimeClient(install)
+    if client.is_online():
+        from buster.runtime import RemoteKernel
+        return RemoteKernel(client), None
+    config = Config(config_path=os.path.join(install, "config", "config.json"))
+    from buster.kernel.core import Kernel
+    kernel = Kernel(config=config)
+    return None, kernel
 
 
 def cmd_caps(args) -> int:
-    kernel = _instance()
-    for name in kernel.cap.list_capabilities():
+    install = _install_path(args)
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        capabilities = remote.cap.list_capabilities()
+        actions = remote.cap.list_actions()
+    else:
+        kernel.start()
+        try:
+            capabilities = kernel.cap.list_capabilities()
+            actions = kernel.cap.list_actions()
+        finally:
+            kernel.stop()
+
+    for name in capabilities:
         print(name)
     print()
     print("Actions:")
-    for action in kernel.cap.list_actions():
+    for action in actions:
         print(f"  {action}")
     return 0
 
 
 def cmd_grant(args) -> int:
     if not args:
-        print("[ERROR] usage: buster grant <action>", file=sys.stderr)
+        print("[ERROR] usage: buster grant <action> [--install-path <dir>]", file=sys.stderr)
         return 2
-    kernel = _instance()
+    install = _install_path(args)
     action = args[0]
-    kernel.permissions.grant(action)
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        remote.permissions.grant(action)
+    else:
+        kernel.permissions.grant(action)
     print(f"granted: {action}")
     return 0
 
 
 def cmd_deny(args) -> int:
     if not args:
-        print("[ERROR] usage: buster deny <action>", file=sys.stderr)
+        print("[ERROR] usage: buster deny <action> [--install-path <dir>]", file=sys.stderr)
         return 2
-    kernel = _instance()
+    install = _install_path(args)
     action = args[0]
-    kernel.permissions.deny(action)
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        remote.permissions.deny(action)
+    else:
+        kernel.permissions.deny(action)
     print(f"denied: {action}")
     return 0
 
 
 def cmd_run(args) -> int:
     if not args:
-        print("[ERROR] usage: buster run <action> [k=v ...]", file=sys.stderr)
+        print("[ERROR] usage: buster run <action> [k=v ...] [--install-path <dir>]", file=sys.stderr)
         return 2
-    kernel = _instance()
-    kernel.start()
+    install = _install_path(args)
     action = args[0]
     params = {}
     for arg in args[1:]:
         if "=" in arg:
             key, _, value = arg.partition("=")
             params[key] = _coerce(value)
-    result = kernel.cap.call(action, extra=params, context={"actor": "cli", "source": "cli"})
+
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        result = remote.cap.call(action, extra=params,
+                                 context={"actor": "cli", "source": "cli"})
+    else:
+        kernel.start()
+        try:
+            result = kernel.cap.call(action, extra=params,
+                                     context={"actor": "cli", "source": "cli"})
+        finally:
+            kernel.stop()
+
     if not result.success:
         print(f"[{action}] {result.error}", file=sys.stderr)
-        kernel.stop()
         return 1
     if result.data is not None:
         print(json.dumps(result.data, default=str, indent=2))
     else:
         print("OK")
-    kernel.stop()
     return 0
 
 
 def cmd_config(args) -> int:
-    config = Config()
+    config = Config(config_path=os.path.join(_install_path(args), "config", "config.json"))
     if not args:
         print(json.dumps(config.all(), indent=2))
         return 0
@@ -142,16 +278,17 @@ def cmd_config(args) -> int:
 
 
 def cmd_jobs(args) -> int:
-    kernel = _instance()
-    scheduler = kernel.scheduler
+    install = _install_path(args)
+    remote, kernel = _client_or_kernel(install)
     if args and args[0] == "cancel":
         job_id = args[1] if len(args) > 1 else ""
-        if scheduler.cancel(job_id):
-            print(f"cancelled: {job_id}")
-            return 0
-        print(f"[ERROR] no pending job '{job_id}'", file=sys.stderr)
-        return 1
-    jobs = scheduler.list_jobs()
+        cancelled = (remote.scheduler.cancel(job_id) if remote is not None
+                     else kernel.scheduler.cancel(job_id))
+        print(f"cancelled: {job_id}" if cancelled else f"[ERROR] no pending job '{job_id}'")
+        return 0 if cancelled else 1
+
+    jobs = (remote.scheduler.list_jobs() if remote is not None
+            else kernel.scheduler.list_jobs())
     if not jobs:
         print("no jobs scheduled")
         return 0
@@ -162,14 +299,19 @@ def cmd_jobs(args) -> int:
 
 
 def cmd_audit(args) -> int:
-    import time
-    from buster.config import Config as Cfg
-    install_path = Cfg().get("install_path", os.path.expanduser("~/.buster/"))
-    from buster.kernel.audit import Audit
-    audit = Audit(os.path.join(install_path, "logs"))
+    import time as _time
+    install = _install_path(args)
     limit = int(args[0]) if args and args[0].isdigit() else 10
-    for entry in audit.tail(limit):
-        stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(entry["ts"]))
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        entries = remote.audit.tail(limit)
+    else:
+        from buster.kernel.audit import Audit
+        audit = Audit(os.path.join(install, "logs"))
+        entries = audit.tail(limit)
+    for entry in entries:
+        stamp = _time.strftime("%Y-%m-%d %H:%M:%S",
+                               _time.localtime(entry["ts"]))
         print(f"{stamp}  {entry['action']:<28} actor={entry.get('actor', '')}")
     return 0
 
@@ -180,12 +322,18 @@ def cmd_help(args) -> int:
         "\n"
         "Usage: buster <command> [options]\n"
         "\n"
-        "Commands:\n"
-        "  start              Start the Buster kernel\n"
-        "  status             Show kernel status\n"
+        "Lifecycle (single runtime):\n"
+        "  bootstrap          Offline install/init (never boots a kernel)\n"
+        "  start              Bring the single runtime online (daemon)\n"
+        "  status             Report runtime state (lock + heartbeat)\n"
+        "  shell              Attach an interactive shell to the runtime\n"
+        "  stop               Shut the runtime down cleanly\n"
+        "\n"
+        "Diagnostics:\n"
         "  doctor             Run environment health checks\n"
         "  version            Print the installed version\n"
-        "  shell              Launch the interactive shell\n"
+        "\n"
+        "Management (RPC-first, transient fallback):\n"
         "  caps               List capabilities and actions\n"
         "  run <action>       Invoke a capability action (k=v args)\n"
         "  grant <action>     Grant an action permission\n"
@@ -194,6 +342,9 @@ def cmd_help(args) -> int:
         "  jobs [cancel <id>] List / cancel scheduler jobs\n"
         "  audit [limit]      Show audit trail\n"
         "  help               Show this help\n"
+        "\n"
+        "Options:\n"
+        "  --install-path <dir>  Override the install directory\n"
     )
     return 0
 
@@ -214,11 +365,14 @@ def _coerce(value: str):
 
 
 COMMANDS = {
+    "bootstrap": cmd_bootstrap,
     "start": cmd_start,
     "status": cmd_status,
+    "shell": cmd_shell,
+    "stop": cmd_stop,
+    "daemon": cmd_daemon,
     "doctor": cmd_doctor,
     "version": cmd_version,
-    "shell": cmd_shell,
     "caps": cmd_caps,
     "grant": cmd_grant,
     "deny": cmd_deny,

@@ -47,15 +47,36 @@ backups, and writes an initial configuration.
 
 ## Bootstrap
 
-Bootstrap materializes the runtime environment: install layout, default
-permission grants (from `security.default_grants`), initial memory/experience
-seeds and world-model facts. Idempotent — re-running is a no-op.
+Bootstrap is the **installation/initialization** phase; it never boots a
+runtime and never constructs a Kernel. It materializes the install layout,
+default configuration and the first-run marker — all idempotent.
 
 ```sh
-python bootstrap.py                  # bootstrap and exit
+python bootstrap.py                  # offline bootstrap
 python bootstrap.py --check          # bootstrap + doctor health checks
-python bootstrap.py --shell          # bootstrap + interactive shell
-python bootstrap.py --skip-grants    # skip default grants
+python -m buster.cli bootstrap       # same via the CLI
+```
+
+## Runtime lifecycle
+
+`start` brings the single runtime online and `stop` takes it down. A PID +
+heartbeat lock in `install/state/` guarantees **exactly one Kernel instance
+per install**; a second `start` is refused. `status` and `shell` are
+read-only clients (they never create a Kernel of their own) that talk to the
+daemon over a file-based JSON request/response channel.
+
+```sh
+python -m buster.cli start           # daemon comes online (single kernel)
+python -m buster.cli status          # state, PID, heartbeat, capabilities
+python -m buster.cli shell           # interactive shell attached to the runtime
+python -m buster.cli stop            # clean shutdown, lock released
+```
+
+Runtime verification runs standalone (lock semantics, RPC op surface,
+cross-process daemon boot):
+
+```sh
+python buster/tests/check_runtime.py
 ```
 
 ## Build
