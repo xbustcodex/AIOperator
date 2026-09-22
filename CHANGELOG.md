@@ -5,6 +5,35 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-09-22
+
+### Added — multi-architecture release pipeline
+
+- **Architecture registry** (`buster/osbuild/architectures.py`): centralized
+  Debian tokens, machines, ELF class/machine, multiarch triplets and dynamic
+  loaders for amd64/arm64 (enabled) and i386, armhf, armel, ppc64el, s390x,
+  riscv64, mips64el (candidate). One OS, one source tree; architectures are
+  release targets.
+- **Generalized builder** (`build_rootfs.py`, `buster/osbuild/*`): no hidden
+  amd64 assumptions; per-architecture package resolution, dynamic-loader
+  handling, manifest/verification/artifact naming.
+- **Architecture-aware verification**: ELF class/machine parsing
+  (`buster/osbuild/elf.py`) of the dynamic loader and core binaries, dpkg
+  database architecture, package closure, Buster installation and filesystem
+  identity. Distinguishes constructed+structural verification from
+  actually-executed runtime testing (`runtime_executed` flag).
+- **Single release workflow** (`build_release.py`): builds all enabled
+  architectures, emits `buster-os-<v>-<arch>-bookworm.tar.gz`,
+  `manifest-<arch>.json`, `verification-<arch>.json`, an authoritative
+  combined `SHA256SUMS`, `release.json` and `candidates-report.json`
+  (closure evaluation of candidate architectures).
+- **Architecture support policy** documented (`docs/buster_arch_support_policy.md`).
+- Multi-architecture offline test suite (`buster/tests/test_multirarch.py`).
+
+### Changed
+- Version 0.3.1. Distribution artifacts and manifests now carry per-arch
+  names.
+
 ## [0.3.0] - 2026-09-22
 
 ### Added — Buster OS complete Linux environment

@@ -164,11 +164,22 @@ Distribution build (network-backed, reproducible):
 
 ```
 python build_rootfs.py --arch amd64      # or arm64
+python build_release.py                  # all enabled architectures + manifests
+python build_release.py --candidates-check
 ```
 
 Produces: `dist/buster-os-<version>-<arch>-<distro>.tar.gz`,
-`manifest.json` (resolved package versions, checksums, mirror, snapshot),
-`SHA256SUMS`, `verification.json`. The rootfs is a full populated Linux
+`manifest-<arch>.json` (resolved package versions, checksums, mirror,
+snapshot), `verification-<arch>.json` (ELF/loader/dpkg/identity checks),
+an authoritative `SHA256SUMS`, `release.json` and `candidates-report.json`.
+
+Buster OS is ONE operating system and ONE source tree. Architectures are
+release targets defined in `buster/osbuild/architectures.py` — enabled:
+amd64, arm64 (constructed + structurally verified); candidate: i386, armhf,
+armel, ppc64el, s390x, riscv64, mips64el (closure-evaluated). See
+`docs/buster_arch_support_policy.md`. The rootfs is a full populated Linux
 userspace; dpkg configuration completes at first boot (standard bootstrap
 model). Buster is installed as a system component with systemd + sysvinit
-service units and `busterctl`.
+service units and `busterctl`. Artifacts built here are structurally
+verified; `runtime_executed` is set only when an artifact has actually been
+exercised in a matching environment.

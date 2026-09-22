@@ -51,10 +51,9 @@ BUSTER_DIRS = [
 
 
 def autodetect_arch() -> str:
-    import platform
-    machine = platform.machine().lower()
-    if machine in ("aarch64", "arm64"):
-        return "arm64"
-    if machine in ("x86_64", "amd64"):
-        return "amd64"
-    return ARCH_DEFAULT
+    """Return the Buster OS architecture token for the current host."""
+    try:
+        from buster.osbuild.architectures import autodetect_host
+        return autodetect_host().token
+    except KeyError:
+        return ARCH_DEFAULT

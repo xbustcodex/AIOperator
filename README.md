@@ -75,17 +75,27 @@ Build a reproducible, populated Buster OS rootfs (Debian foundation + Buster
 system layer). Requires network access to the Debian archive.
 
 ```sh
-python build_rootfs.py --arch amd64       # or --arch arm64
+python build_rootfs.py --arch amd64       # single architecture
+python build_release.py                   # all enabled architectures (amd64 + arm64)
+python build_release.py --candidates-check   # closure evaluation of candidate archs
 ```
 
-Produces:
+Supported architectures: **amd64** and **arm64** (enabled, structurally
+verified). Candidate architectures (i386, armhf, armel, ppc64el, s390x,
+riscv64, mips64el) are evaluated at closure level; see
+`docs/buster_arch_support_policy.md`.
+
+Produces (per supported architecture and for the release):
 
 - `dist/buster-os-<version>-<arch>-bookworm.tar.gz` — deployable rootfs
-- `dist/manifest.json` — resolved packages, versions, checksums, mirror/snapshot
-- `dist/SHA256SUMS`, `dist/verification.json`
+- `dist/manifest-<arch>.json` — resolved packages, versions, checksums
+- `dist/verification-<arch>.json` — ELF/loader/dpkg/identity verification
+- `dist/release.json`, `dist/candidates-report.json`, `dist/SHA256SUMS`
 
-Deploy the rootfs through any suitable Linux host, let dpkg finish
-first-boot configuration, then run:
+Verification is architecture-aware (ELF class/machine, dynamic loader, dpkg
+database, Buster installation, filesystem identity). Artifacts built here are
+constructed and structurally verified; `runtime_executed` is set only when an
+artifact has actually been booted in a matching environment.
 
 ```sh
 busterctl bootstrap

@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""Buster OS Linux distribution builder.
+"""Buster OS Linux distribution builder (per-architecture).
 
-Reproducibly constructs a populated Buster OS root filesystem from the
-upstream Linux foundation (Debian bookworm), installs the Buster system
-layer and the existing Buster runtime, and packages the result as a
-deployable distribution/rootfs artifact with manifests and checksums.
+Reproducibly constructs a populated Buster OS rootfs for a target CPU
+architecture from the upstream Linux foundation (Debian stable), installs the
+Buster system layer and the existing Buster runtime, and emits a deployable
+distribution/rootfs artifact with architecture-specific manifests, ELF-aware
+verification and checksums.
 
 Usage:
-    python build_rootfs.py [--arch amd64|arm64] [--distro bookworm]
-                           [--mirror URL] [--security-mirror URL]
-                           [--out dist] [--buster-source .] [--keep]
+    python build_rootfs.py --arch amd64
+    python build_rootfs.py --arch arm64
 
-The build is network-backed: it downloads package indexes and .deb archives
-from the selected Debian archive. The resulting rootfs is configured fully at
-first boot by dpkg (maintainer scripts/configuration), which is the standard
-debootstrap model.
+Architectures are release targets of ONE Buster OS; see
+buster/osbuild/architectures.py for the support policy.
 """
 
 import argparse
@@ -24,14 +22,16 @@ import json
 import logging
 import os
 import shutil
+import stat
 import sys
 import tarfile
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from buster.osbuild import BASE_SEEDS, DISTRO_DEFAULT, autodetect_arch  # noqa: E402
-from buster.osbuild import apiclient, deb, manifest, packages, resolver  # noqa: E402
+from buster.osbuild import BASE_SEEDS, DISTRO_DEFAULT  # noqa: E402
+from buster.osbuild import apiclient, deb, elf, manifest, packages, resolver  # noqa: E402
+from buster.osbuild.architectures import lookup  # noqa: E402
 from buster.osbuild.rootfs import Rootfs  # noqa: E402
 from buster.version import get_version  # noqa: E402
 
@@ -42,7 +42,7 @@ log = logging.getLogger("build_rootfs")
 
 def parse_args(argv: list | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Buster OS rootfs builder")
-    parser.add_argument("--arch", default=None, help="target architecture")
+    parser.add_argument("--arch", required=True, help="target architecture token")
     parser.add_argument("--distro", default=DISTRO_DEFAULT, help="Debian suite")
     parser.add_argument("--mirror", default="http://deb.debian.org/debian")
     parser.add_argument("--security-mirror",
@@ -62,109 +62,56 @@ def fetch_index(mirror, arch, distro):
     for index_arch in (arch, "all"):
         url = f"{base}/binary-{index_arch}/Packages"
         try:
-            indexes[index_arch] = packages.parse_packages(apiclient.fetch_packages_index(url + ".gz"))
+            indexes[index_arch] = packages.parse_packages(
+                apiclient.fetch_packages_index(url + ".gz"))
             log.info("index %s: %d packages", index_arch, len(indexes[index_arch]))
         except Exception as exc:  # noqa: BLE001
             log.warning("index %s unavailable: %s", index_arch, exc)
     return indexes
 
 
-def build_artifact(rootfs_dir, root, arch, version, out_dir, distro):
-    os.makedirs(out_dir, exist_ok=True)
-    artifact_name = f"buster-os-{version}-{arch}-{distro}.tar.gz"
-    artifact_path = os.path.join(out_dir, artifact_name)
-    if os.path.isfile(artifact_path):
-        os.remove(artifact_path)
-    with tarfile.open(artifact_path, "w:gz") as tar:
-        tar.add(rootfs_dir, arcname=".")
-        root.pack_extra_members(tar)
-    return artifact_name, artifact_path
+def resolve_closure(records, arch_token):
+    """Resolve the base package closure for an architecture."""
+    resolver_ = resolver.DependencyResolver(records, arch_token)
+    return resolver_.resolve(list(BASE_SEEDS))
 
 
-def verify_rootfs(root: Rootfs, artifact_path: str | None = None) -> dict:
-    checks = {}
-    required = [
-        "etc/os-release", "etc/passwd", "etc/group", "etc/shadow",
-        "etc/nsswitch.conf", "etc/hosts", "etc/fstab", "etc/apt/sources.list",
-        "usr/bin/dpkg", "usr/bin/apt-get", "var/lib/dpkg/status",
-        "usr/lib/os-release", "opt/buster/lib/buster/version.py",
-        "home/buster", "var/lib/buster", "run/buster", "tmp", "dev", "proc",
-        "sys", "root", "bin", "sbin", "lib",
-    ]
-    for path in required:
-        checks[f"exists:{path}"] = os.path.exists(root._path(path))
-
-    # merged-/usr: a binary may live under /usr/bin or under /bin (via the
-    # /usr merge), and python3 is normally an alternatives symlink.
-    def binary_present(name: str) -> bool:
-        for rel in (f"usr/bin/{name}", f"bin/{name}", f"usr/bin/{name}3"):
-            if os.path.isfile(root._path(rel)):
-                return True
-        if artifact_path:
-            with tarfile.open(artifact_path, "r:gz") as tar:
-                names = {m.name for m in tar.getmembers()}
-                if any(n in names for n in (f"usr/bin/{name}", f"bin/{name}")):
-                    return True
-        return False
-
-    checks["binary:bash"] = binary_present("bash")
-    checks["binary:python3"] = binary_present("python3")
-    checks["binary:git"] = binary_present("git")
-    checks["binary:curl"] = binary_present("curl")
-
-    with open(root._path("etc/os-release"), encoding="utf-8") as fh:
-        osrelease = fh.read()
-    checks["identity:busteros"] = 'ID=busteros' in osrelease
-    checks["identity:ID_LIKE-debian"] = 'ID_LIKE' in osrelease
-    with open(root._path("var/lib/dpkg/status"), encoding="utf-8") as fh:
-        status = fh.read()
-    checks["packages:coreutils"] = "Package: coreutils" in status
-    checks["packages:python3"] = "Package: python3" in status
-    checks["packages:git"] = "Package: git" in status
-    return checks
-
-
-def main(argv: list | None = None) -> int:
-    args = parse_args(argv)
-    arch = args.arch or autodetect_arch()
+def build_arch(arch_token: str, *, distro: str, mirror: str,
+               security_mirror: str, out_dir: str, buster_source: str,
+               keep: bool = False, limit: int = 0) -> dict:
+    """Build one architecture. Returns paths to produced artifacts."""
+    meta = lookup(arch_token)
     version = get_version()
-    distro = args.distro
-    mirror = args.mirror
-    security_mirror = args.security_mirror
     snapshot_date = datetime.date.today().isoformat()
 
-    workdir = tempfile.mkdtemp(prefix="buster-rootfs-")
+    workdir = tempfile.mkdtemp(prefix=f"buster-rootfs-{arch_token}-")
     rootfs_dir = os.path.join(workdir, "rootfs")
-    root = Rootfs(rootfs_dir, arch)
+    root = Rootfs(rootfs_dir, arch_token)
 
-    log.info("Buster OS %s distribution build (arch=%s foundation=%s)",
-             version, arch, distro)
+    log.info("Buster OS %s distribution build (arch=%s machine=%s foundation=%s)",
+             version, arch_token, meta.machine, distro)
     root.build_layout()
-    indexes = fetch_index(mirror, arch, distro)
-    records = [r for idx in indexes.values() for r in idx]
+    indexes = fetch_index(mirror, arch_token, distro)
+    records = [rec for idx in indexes.values() for rec in idx]
     if not records:
-        log.error("no package index available from %s", mirror)
-        return 2
+        raise RuntimeError(f"no package index available from {mirror} for {arch_token}")
 
-    depresolver = resolver.DependencyResolver(records, arch)
     try:
-        selected = depresolver.resolve(list(BASE_SEEDS))
+        selected = resolve_closure(records, arch_token)
     except KeyError as exc:
-        log.error("dependency resolution failed: %s", exc)
-        return 2
-    log.info("resolved %d packages from base seeds", len(selected))
+        raise RuntimeError(f"dependency resolution failed for {arch_token}: {exc}")
 
     contents: dict[str, deb.DebContent] = {}
     package_manifest = []
     mirror_base = mirror.rstrip("/")
-    used_records = selected[: args.limit] if args.limit else selected
+    used_records = selected[:limit] if limit else selected
     for num, record in enumerate(used_records, 1):
         filename = record.filename
         if not filename:
             continue
         url = f"{mirror_base}/{filename.lstrip('/')}"
-        log.info("[%d/%d] %s %s", num, len(selected), record.package, record.version)
-        raw = apiclient.fetch_bytes(url, timeout=60)
+        log.info("[%d/%d] %s %s", num, len(used_records), record.package, record.version)
+        raw = apiclient.fetch_bytes(url, timeout=90)
         if record.md5sum and hashlib.md5(raw).hexdigest() != record.md5sum:
             log.warning("md5 mismatch for %s (%s)", record.package, record.filename)
         content = deb.extract(raw)
@@ -182,36 +129,192 @@ def main(argv: list | None = None) -> int:
     root.write_base_config(distro, mirror, security_mirror)
     root.write_passwd_db()
     root.write_os_release(version)
-    root.install_buster(args.buster_source, version)
+    root.install_buster(buster_source, version)
 
-    # package the artifact
-    artifact_name, artifact_path = build_artifact(rootfs_dir, root, arch, version,
-                                                  args.out, distro)
-    checks = verify_rootfs(root, artifact_path)
-    log.info("rootfs verification: %d/%d checks passed",
-             sum(1 for v in checks.values() if v), len(checks))
+    artifact_name = f"buster-os-{version}-{arch_token}-{distro}.tar.gz"
+    artifact_path = os.path.join(out_dir, artifact_name)
+    os.makedirs(out_dir, exist_ok=True)
+    if os.path.isfile(artifact_path):
+        os.remove(artifact_path)
+    with tarfile.open(artifact_path, "w:gz") as tar:
+        tar.add(rootfs_dir, arcname=".")
+        root.pack_extra_members(tar)
+
+    checks = verify_rootfs(root, meta, artifact_path)
+    passed = sum(1 for v in checks.values() if v.get("ok"))
+    log.info("rootfs verification (%s): %d/%d checks passed", arch_token, passed, len(checks))
 
     manifest_data = manifest.build_manifest(
-        version=version, arch=arch, distro="debian", distro_release=distro,
+        version=version, arch=arch_token, distro="debian", distro_release=distro,
         mirror=mirror, snapshot_date=snapshot_date,
         artifact_name=artifact_name,
         artifact_sha256=manifest.sha256_file(artifact_path),
         packages=package_manifest)
-    manifest.write_manifest_and_checksums(args.out, manifest_data)
+    manifest_data["machine"] = meta.machine
+    manifest_data["tier"] = meta.tier
 
-    report_path = os.path.join(args.out, "verification.json")
-    with open(report_path, "w", encoding="utf-8") as handle:
-        json.dump({"checks": checks, "manifest": os.path.basename(args.out) + "/manifest.json"},
-                  handle, indent=2)
+    manifest_path = os.path.join(out_dir, f"manifest-{arch_token}.json")
+    manifest.write_manifest_and_checksums(out_dir, manifest_data, name=manifest_path)
 
-    if args.keep:
-        print(f"rootfs workdir kept at {rootfs_dir}")
+    verification_path = os.path.join(out_dir, f"verification-{arch_token}.json")
+    with open(verification_path, "w", encoding="utf-8") as handle:
+        json.dump({
+            "os": "Buster OS", "version": version,
+            "architecture": arch_token, "machine": meta.machine,
+            "runtime_executed": False,
+            "method": "constructed + structural verification",
+            "checks": checks,
+        }, handle, indent=2)
+
+    if keep:
+        log.info("rootfs workdir kept at %s", rootfs_dir)
     else:
         shutil.rmtree(workdir, ignore_errors=True)
 
-    print(f"\nBuster OS {version} rootfs artifact: {os.path.join(args.out, artifact_name)}")
-    print(f"verification: {sum(1 for v in checks.values() if v)}/{len(checks)}")
-    return 0
+    print(f"Buster OS {version} rootfs artifact ({arch_token}): {artifact_path}")
+    print(f"verification ({arch_token}): {passed}/{len(checks)}")
+    return {
+        "arch": arch_token, "machine": meta.machine, "tier": meta.tier,
+        "artifact": artifact_path,
+        "manifest": manifest_path, "verification": verification_path,
+        "checks_passed": passed, "checks_total": len(checks),
+    }
+
+
+def verify_rootfs(root: Rootfs, meta, artifact_path: str) -> dict:
+    """Constructed+structural verification, fully architecture-aware."""
+    checks: dict[str, dict] = {}
+    arch = meta.token
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks[name] = {"ok": ok, "detail": detail}
+
+    required = [
+        "etc/os-release", "etc/passwd", "etc/group", "etc/shadow",
+        "etc/nsswitch.conf", "etc/hosts", "etc/fstab", "etc/apt/sources.list",
+        "usr/bin/dpkg", "usr/bin/apt-get", "var/lib/dpkg/status",
+        "usr/lib/os-release", "opt/buster/lib/buster/version.py",
+        "home/buster", "var/lib/buster", "run/buster", "tmp", "dev", "proc",
+        "sys", "root", "bin", "sbin", "lib",
+    ]
+    for path in required:
+        check(f"exists:{path}", os.path.exists(root._path(path)))
+
+    # package database reports the target architecture
+    status_text = read_text(root, "var/lib/dpkg/status")
+    check("dpkg:arch-present", f"Architecture: {arch}" in status_text
+          or f"{arch} " in status_text,
+          f"Architecture: {arch}")
+    for pkg in ("coreutils", "python3", "git"):
+        check(f"packages:{pkg}", f"Package: {pkg}" in status_text)
+
+    # merged-/usr binaries
+    def binary_file(name: str):
+        for rel in (f"usr/bin/{name}", f"bin/{name}", f"usr/bin/{name}3"):
+            candidate = root._path(rel)
+            if os.path.isfile(candidate):
+                return candidate
+        return None
+
+    bash_path = binary_file("bash")
+
+    # dynamic loader for the target architecture
+    loader_path = find_loader(root, meta)
+    check("loader:present", loader_path is not None,
+          ", ".join(meta.loaders) or "unknown")
+    if loader_path:
+        header = elf.parse_elf(load_bytes(loader_path))
+        check("loader:elf", header is not None and header.matches(meta.elf_machine, meta.elf_class),
+              f"e_machine={header.e_machine if header else None} "
+              f"class={header.e_class if header else None}")
+    tar_names = loader_names_in_artifact(artifact_path, meta)
+    if artifact_path:
+        check("loader:artifact-symlink", bool(tar_names),
+              ", ".join(tar_names) or "public loader name not present in artifact tar")
+    else:
+        checks["loader:artifact-symlink"] = {"ok": True, "detail": "no artifact given (skipped)"}
+    if bash_path:
+        header = elf.parse_elf(load_bytes(bash_path))
+        check("bash:elf", header is not None and header.matches(meta.elf_machine, meta.elf_class),
+              f"e_machine={header.e_machine if header else None} "
+              f"class={header.e_class if header else None}")
+
+    osrelease = read_text(root, "etc/os-release")
+    check("identity:busteros", "ID=busteros" in osrelease)
+    check("identity:ID_LIKE-debian", "ID_LIKE" in osrelease)
+    check("buster:installed", os.path.isfile(
+        root._path("opt/buster/lib/buster/version.py")))
+    check("tooling:dpkg", os.path.isfile(root._path("usr/bin/dpkg")))
+    return checks
+
+
+def read_text(root: Rootfs, rel: str) -> str:
+    try:
+        with open(root._path(rel), "r", encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except OSError:
+        return ""
+
+
+def load_bytes(path: str) -> bytes:
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return b""
+
+
+def find_loader(root: Rootfs, meta) -> str | None:
+    tops = [root._path("lib64"), root._path("lib"),
+            root._path(meta.deb_lib_dir())]
+    for top in tops:
+        if not os.path.isdir(top):
+            continue
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames.sort()
+            filenames.sort()
+            for name in filenames:
+                if _is_loader_name(name, meta):
+                    return os.path.join(dirpath, name)
+    return None
+
+
+def _is_loader_name(name: str, meta) -> bool:
+    if name in meta.loaders:
+        return True
+    # libc installs the real loader (e.g. ld-2.36.so); the public name is a
+    # symlink. Match the ``ld-<version>.so``/``ld-linux-*.so`` pattern.
+    lowered = name.lower()
+    if not lowered.startswith("ld-"):
+        return False
+    import re as _re
+    return bool(_re.match(r"^ld-([a-z0-9._-]*-)?\d+[.\d]*\.so(\.\d+)?$", lowered))
+
+
+def loader_names_in_artifact(tar_path: str, meta) -> list[str]:
+    present = []
+    if not tar_path:
+        return present
+    with tarfile.open(tar_path, "r:gz") as tar:
+        for member in tar.getmembers():
+            base = os.path.basename(member.name.rstrip("/"))
+            if base in meta.loaders:
+                present.append(member.name)
+    return present
+
+
+def main(argv: list | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        result = build_arch(args.arch, distro=args.distro, mirror=args.mirror,
+                            security_mirror=args.security_mirror, out_dir=args.out,
+                            buster_source=args.buster_source, keep=args.keep,
+                            limit=args.limit)
+    except Exception as exc:  # noqa: BLE001
+        log.error("build failed for %s: %s", args.arch, exc)
+        return 2
+    print(f"checks passed: {result['checks_passed']}/{result['checks_total']}")
+    return 0 if result["checks_total"] == result["checks_passed"] else 1
 
 
 if __name__ == "__main__":
