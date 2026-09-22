@@ -5,6 +5,48 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-09-22
+
+### Added — Buster OS complete Linux environment
+
+- **Linux foundation decision** (`docs/buster_os_foundation_decision.md`):
+  candidates evaluated (Debian, Alpine, Arch, Fedora, Ubuntu, Void); Debian
+  stable (bookworm, glibc, apt/dpkg) chosen as the long-term upstream
+  foundation. ARM64/aarch64 and x86_64/amd64 first-class.
+- **Rootfs distribution build** (`buster/osbuild/` + `build_rootfs.py`):
+  reproducible, populated Buster OS rootfs constructed from the Debian
+  archive — stdlib-only dpkg-index parser, .deb (ar/tar) extractor,
+  dependency-closure resolver, merged-/usr rootfs layout, dpkg status
+  database, base users/groups and system configuration, Buster identity
+  (`/etc/os-release` → `ID=busteros`), manifests and checksums.
+- **Buster system layer**: `/etc/buster` config, `/var/lib/buster`
+  persistent state, `/var/log/buster` logs, `/opt/buster` runtime
+  components, `/run/buster` runtime state, `busterctl`, systemd unit and
+  sysvinit script, Python `.pth` wiring, logrotate, environment/profile.
+- **Migration** from the v0.2.0 `~/.buster` application layout to the
+  system layout (`buster/osbuild/migrate.py`) preserving memories,
+  knowledge, experience, goals, plans, suggestions and configuration seeds
+  — idempotent, with an identity marker.
+- **Linux-environment diagnostics** (`run_os_doctor`): os-release identity,
+  rootfs layout, dpkg package database, required packages, binaries,
+  machine info.
+- **`busterctl`** system control tool reusing the single-Kernel CLI.
+
+### Changed
+
+- Version 0.3.0. AGENTS.md, README and architecture docs updated to
+  establish Buster OS as its own general-purpose Linux environment with
+  TerminalP as one deployment mechanism (not the definition of Buster OS).
+- Buster Runtime Kernel explicitly distinguished from the conventional
+  Linux kernel throughout documentation.
+
+### Tests
+
+- `test_osbuild.py` (offline): version comparison, dependency parsing/
+  resolution, .deb extraction, rootfs layout/merged-usr, dpkg status
+  generation, Buster identity + system-layer install, manifests/checksums,
+  v0.2.0 migration, OS doctor.
+
 ## [0.2.0] - 2026-09-22
 
 ### Added — intelligent Buster phone node

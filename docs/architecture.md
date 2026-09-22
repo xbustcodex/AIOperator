@@ -1,9 +1,13 @@
 # Buster OS Architecture
 
-Buster OS is an AI-native operating environment for **TerminalP on Android**,
-built with strict architectural discipline: one runtime, one event bus, one
-scheduler, one source of truth. TerminalP is the first-class phone host;
-Termux-class Android terminals are recognized for compatibility.
+Buster OS is its own complete, general-purpose Linux environment for
+**TerminalP on Android** and other suitable hosts, built on a proven upstream
+Linux foundation (Debian stable). It has its own root filesystem, userspace,
+configuration, package environment, identity, build process and deployable
+rootfs artifact.
+
+The **Buster Runtime Kernel** (Python event/scheduler/capability/security
+layer) is explicitly distinct from the conventional Linux kernel.
 
 ## Layout
 
@@ -61,6 +65,15 @@ buster/
 │   │   ├── results.py      # StructuredResult rendering
 │   │   └── session.py      # REPL + kernel dispatch + job control
 │   ├── runtime.py          # Single-runtime lock, daemon server, RPC client
+│   ├── osbuild/            # Linux distribution/rootfs build system
+│   │   ├── packages.py     # Debian Packages index parser
+│   │   ├── deb.py          # .deb (ar/tar) reader/extractor
+│   │   ├── resolver.py     # Dependency-closure resolver
+│   │   ├── rootfs.py       # Rootfs layout + dpkg state + system layer
+│   │   ├── identity.py     # Buster OS identity/service templates
+│   │   ├── manifest.py     # Distribution manifests + checksums
+│   │   └── migrate.py      # v0.2.0 -> system persistent-state migration
+│   ├── system/             # Buster OS system integration (busterctl)
 │   ├── bootstrap.py        # Offline install/init + runtime seed
 │   ├── intelligence/       # Cognition layer (plugs into the single Kernel)
 │   │   ├── nervous.py      # Basal nervous system: signals + node health
@@ -129,3 +142,33 @@ Capability implementation
   additionally require **elevation approval**.
 - The install, config, memory, log and state trees are **delete-protected**.
 - Every dispatch outcome lands in the **audit trail** (`audit.jsonl`).
+
+## Linux environment and distribution build
+
+Buster OS is its own Linux environment built on a mature upstream foundation
+(Debian bookworm, glibc, apt/dpkg). See
+`docs/buster_os_foundation_decision.md` for the selection rationale.
+
+System layout under Buster OS Linux:
+
+- System/config: `/etc/buster`, `/usr/share/buster` (replaceable, packaged)
+- Runtime state (transient): `/run/buster`
+- Persistent intelligence state: `/var/lib/buster` (memories, goals, plans,
+  permissions, identity)
+- Logs: `/var/log/buster`
+- Buster runtime components: `/opt/buster`
+- User data: `/home/buster`, `/srv/buster`
+- Migration from the v0.2.0 `~/.buster` layout: `buster/osbuild/migrate.py`
+
+Distribution build (network-backed, reproducible):
+
+```
+python build_rootfs.py --arch amd64      # or arm64
+```
+
+Produces: `dist/buster-os-<version>-<arch>-<distro>.tar.gz`,
+`manifest.json` (resolved package versions, checksums, mirror, snapshot),
+`SHA256SUMS`, `verification.json`. The rootfs is a full populated Linux
+userspace; dpkg configuration completes at first boot (standard bootstrap
+model). Buster is installed as a system component with systemd + sysvinit
+service units and `busterctl`.

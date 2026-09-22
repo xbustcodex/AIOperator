@@ -1,18 +1,30 @@
 # Buster OS
 
-An AI-native operating environment for **TerminalP on Android**. Buster OS
-provides a single runtime for AI agents on mobile: a unified event bus,
-scheduler, capability system, memory subsystem, perception, security and an
-interactive shell — all stdlib-only and built to run within typical Android
-device constraints. TerminalP is the first-class phone host; Termux-class
-Android terminals remain supported for compatibility.
+Buster OS is its own complete, general-purpose **Linux environment** — with
+its own root filesystem, userspace, configuration, package environment,
+identity and deployable distribution artifact — built on a mature upstream
+Linux foundation (Debian stable). The existing Buster runtime/intelligence
+architecture is installed as a native system component on top.
 
-Buster 0.2 is a coherent intelligent phone node: a basal nervous system,
-cognitive rhythm and attention layer, an expanded memory architecture
-(working/episodic/experience/semantic/procedural), learning, bounded
-reflection, curiosity, persisted goals and plans, specialized agent roles,
-proactive suggestions, self-maintenance and provider intelligence — all
-running through the single Kernel and its permission/audit architecture.
+TerminalP is a separate Prime Tech application and **one** deployment
+mechanism for Buster OS. Buster OS is not defined by TerminalP, Termux,
+Android, Kali or any other host; it can be deployed through any suitable
+Linux-hosting mechanism without changing what Buster OS is.
+
+## Project
+
+- **Buster runtime** (this repo's `buster/` package): single daemon Kernel,
+  event router, scheduler, capabilities, permissions/elevation, audit, RPC,
+  memory, perception, nervous system, rhythm/attention, learning,
+  reflection, curiosity, goals, plans, agent roles, orchestration,
+  interactive shell and CLI.
+- **Linux distribution build** (`buster/osbuild/` + `build_rootfs.py`):
+  reproducibly constructs a populated Buster OS rootfs from the Debian
+  foundation, installs the Buster system layer, and produces a deployable
+  artifact with manifests and checksums.
+- **System integration** (`buster/system/`, `busterctl`): Buster as a Linux
+  system component with `/etc/buster` configuration, `/var/lib/buster`
+  persistent state, `/var/log/buster` logs and systemd/sysvinit services.
 
 ## Status
 
@@ -56,6 +68,30 @@ python installer.py
 
 Creates `~/.buster/` with config, logs, cache, state, memory, workspaces and
 backups, and writes an initial configuration.
+
+## Distribution / Linux build
+
+Build a reproducible, populated Buster OS rootfs (Debian foundation + Buster
+system layer). Requires network access to the Debian archive.
+
+```sh
+python build_rootfs.py --arch amd64       # or --arch arm64
+```
+
+Produces:
+
+- `dist/buster-os-<version>-<arch>-bookworm.tar.gz` — deployable rootfs
+- `dist/manifest.json` — resolved packages, versions, checksums, mirror/snapshot
+- `dist/SHA256SUMS`, `dist/verification.json`
+
+Deploy the rootfs through any suitable Linux host, let dpkg finish
+first-boot configuration, then run:
+
+```sh
+busterctl bootstrap
+busterctl start
+busterctl status
+```
 
 ## Bootstrap
 

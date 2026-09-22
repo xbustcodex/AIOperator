@@ -62,3 +62,67 @@ def _check_kernel_boot() -> bool:
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+# ---------------------------------------------------------------------------
+# Buster OS Linux-environment diagnostics
+# ---------------------------------------------------------------------------
+
+OS_REQUIRED_DIRS = [
+    "etc", "usr/bin", "usr/lib", "usr/sbin", "var/lib", "var/log",
+    "run", "tmp", "home", "root", "dev", "proc", "sys", "opt", "srv",
+]
+
+
+def read_os_release() -> dict:
+    for path in ("/etc/os-release", "/usr/lib/os-release"):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = {}
+                for line in handle:
+                    line = line.strip()
+                    if "=" in line:
+                        key, _, value = line.partition("=")
+                        data[key.strip()] = value.strip().strip('"')
+                return data
+        except OSError:
+            continue
+    return {}
+
+
+def run_os_doctor() -> DoctorReport:
+    """Diagnose the surrounding Linux environment (graceful on any host)."""
+    report = DoctorReport()
+
+    os_release = read_os_release()
+    report.add("os-release", ok=bool(os_release.get("ID")),
+               detail=f"ID={os_release.get('ID', 'unknown')}")
+    report.add("buster-identity",
+               ok=os_release.get("ID") == "busteros",
+               detail=f"ID={os_release.get('ID', 'unknown')} "
+                      f"VERSION={os_release.get('VERSION_ID', '?')}")
+
+    missing_dirs = [d for d in OS_REQUIRED_DIRS if not os.path.isdir(os.path.join("/", d))]
+    report.add("rootfs-layout", ok=not missing_dirs,
+               detail="missing: " + ", ".join(missing_dirs) if missing_dirs else "standard tree present")
+
+    dpkg_status = "/var/lib/dpkg/status"
+    has_dpkg = os.path.isfile(dpkg_status)
+    report.add("package-database", ok=has_dpkg, detail=dpkg_status)
+    if has_dpkg:
+        required_pkgs = ["coreutils", "bash", "dpkg", "python3"]
+        with open(dpkg_status, "r", encoding="utf-8", errors="replace") as handle:
+            status_text = handle.read()
+        missing_pkgs = [p for p in required_pkgs
+                        if f"Package: {p}" not in status_text]
+        report.add("required-packages", ok=not missing_pkgs,
+                   detail="missing: " + ", ".join(missing_pkgs) if missing_pkgs else "present")
+
+    for binary in ("bash", "python3", "git", "apt-get"):
+        import shutil
+        report.add(f"binary:{binary}", ok=shutil.which(binary) is not None,
+                   detail=shutil.which(binary) or "not found")
+
+    report.add("machine", ok=True,
+               detail=f"{platform.machine()} python={platform.python_version()}")
+    return report
