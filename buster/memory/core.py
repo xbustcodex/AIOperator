@@ -67,6 +67,16 @@ class Memory:
         return [k for k, e in self._data.items()
                 if e.get("expires") is None or now <= e["expires"]]
 
+    def prune_expired(self) -> int:
+        now = time.time()
+        expired = [k for k, e in self._data.items()
+                   if e.get("expires") is not None and now > e["expires"]]
+        for key in expired:
+            del self._data[key]
+        if expired:
+            self._save()
+        return len(expired)
+
     def clear(self) -> None:
         self._data.clear()
         self._save()

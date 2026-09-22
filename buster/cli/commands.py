@@ -316,6 +316,62 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def cmd_intel(args) -> int:
+    section = args[0] if args else "health"
+    install = _install_path(args)
+    remote, kernel = _client_or_kernel(install)
+    if remote is not None:
+        view = remote.intel_view(section)
+    else:
+        from buster.kernel.core import Kernel
+        kernel = Kernel(config=Config(config_path=os.path.join(install, "config", "config.json")))
+        view = kernel.intel_view(section)
+    print(json.dumps(view, default=str, indent=2))
+    return 0
+
+
+def cmd_goal(args) -> int:
+    install = _install_path(args)
+    text_args = [a for a in args if not a.startswith("--install-path")]
+    while "--install-path" in text_args:
+        idx = text_args.index("--install-path")
+        text_args = text_args[:idx] + text_args[idx + 2:]
+    remote, kernel = _client_or_kernel(install)
+    if not text_args:
+        if remote is not None:
+            view = remote.intel_view("goals")
+        else:
+            from buster.kernel.core import Kernel
+            kernel = Kernel(config=Config(config_path=os.path.join(install, "config", "config.json")))
+            view = kernel.intel_view("goals")
+        print(json.dumps(view, default=str, indent=2))
+        return 0
+    goal = " ".join(text_args)
+    if remote is not None:
+        result = remote.process_goal(goal)
+    else:
+        from buster.kernel.core import Kernel
+        kernel = Kernel(config=Config(config_path=os.path.join(install, "config", "config.json")))
+        kernel.start()
+        try:
+            result = kernel.process_goal(goal)
+        finally:
+            kernel.stop()
+    print(json.dumps(result, default=str, indent=2))
+    return 0
+
+
+def cmd_health(args) -> int:
+    return cmd_intel(["health", *_install_flag(args)])
+
+
+def _install_flag(args):
+    for i, arg in enumerate(args):
+        if arg == "--install-path" and i + 1 < len(args):
+            return [arg, args[i + 1]]
+    return []
+
+
 def cmd_help(args) -> int:
     print(
         "Buster OS - AI-native phone node for TerminalP\n"
@@ -380,6 +436,9 @@ COMMANDS = {
     "config": cmd_config,
     "jobs": cmd_jobs,
     "audit": cmd_audit,
+    "intel": cmd_intel,
+    "goal": cmd_goal,
+    "health": cmd_health,
     "help": cmd_help,
 }
 

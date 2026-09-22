@@ -298,6 +298,25 @@ class RuntimeServer:
             if op == "sensors":
                 return {"op": op, "ok": True,
                         "data": _serialize(self.kernel.perception.snapshot())}
+            if op == "intel":
+                section = message.get("section", "health")
+                return {"op": op, "ok": True,
+                        "data": _serialize(self.kernel.intel_view(section))}
+            if op == "goal":
+                return self._rpc_goal(message)
+            if op == "reflect":
+                items = self.kernel.intel.reflection.reflect_now(
+                    reason=message.get("reason", "rpc"))
+                return {"op": op, "ok": True,
+                        "data": _serialize({"produced": items})}
+            if op == "consolidate":
+                report = self.kernel.intel.memory.consolidate()
+                return {"op": op, "ok": True, "data": _serialize(report)}
+            if op == "process_goal":
+                result = self.kernel.intel.orchestrator.process_goal(
+                    message.get("goal", ""),
+                    tentative=bool(message.get("tentative", False)))
+                return {"op": op, "ok": True, "data": _serialize(result)}
             if op == "plan":
                 from buster.agents.orchestration import AgentOrchestrator
                 run = AgentOrchestrator(kernel=self.kernel).run(
@@ -317,6 +336,27 @@ class RuntimeServer:
             return {"op": op, "ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
     # -- heartbeat ---------------------------------------------------
+
+    def _rpc_goal(self, message: dict) -> dict:
+        goals = self.kernel.intel.goals
+        method = message.get("method", "list")
+        if method == "create":
+            goal = goals.create(message.get("title") or "",
+                                kind=message.get("kind", "user"),
+                                priority=int(message.get("priority", 0)))
+            return {"op": "goal", "ok": True, "data": _serialize(goal.as_dict())}
+        if method == "complete":
+            goals.complete(message.get("goal_id", ""))
+            return {"op": "goal", "ok": True, "data": message.get("goal_id")}
+        if method == "cancel":
+            goals.cancel(message.get("goal_id", ""))
+            return {"op": "goal", "ok": True, "data": message.get("goal_id")}
+        if method == "process":
+            result = self.kernel.intel.orchestrator.process_goal(
+                message.get("goal", ""), tentative=bool(message.get("tentative", False)))
+            return {"op": "goal", "ok": True, "data": _serialize(result)}
+        goals_list = [g.as_dict() for g in goals.list_goals()]
+        return {"op": "goal", "ok": True, "data": _serialize(goals_list)}
 
     def _heartbeat(self) -> None:
         snapshot = self.kernel.status()
@@ -415,6 +455,23 @@ class RemoteKernel:
 
     def run_plan(self, goal: str) -> dict:
         return self.rpc("plan", goal=goal)["data"]
+
+    def intel_view(self, section: str = "health") -> dict:
+        return self.rpc("intel", section=section).get("data", {})
+
+    def create_goal(self, title: str, kind: str = "user",
+                    tentative: bool = False) -> dict:
+        return self.rpc("goal", method="create", title=title,
+                        kind=kind)["data"]
+
+    def process_goal(self, goal: str, tentative: bool = False) -> dict:
+        return self.rpc("process_goal", goal=goal, tentative=tentative)["data"]
+
+    def reflect_now(self) -> dict:
+        return self.rpc("reflect", reason="shell-rpc")["data"]
+
+    def consolidate_now(self) -> dict:
+        return self.rpc("consolidate")["data"]
 
 
 class RemoteCapability:

@@ -51,6 +51,13 @@ class InteractiveShell:
         r.register("learn", self._cmd_learn, "show learned knowledge: learn [prefix]")
         r.register("exp", self._cmd_exp, "show experience statistics")
         r.register("sensors", self._cmd_sensors, "collect perception sensor snapshot")
+        r.register("intel", self._cmd_intel, "inspect intelligence: intel <section>")
+        r.register("goal", self._cmd_goal, "goals: 'goal' lists, 'goal run <text>' executes")
+        r.register("reflect", self._cmd_reflect_now, "run a reflection pass now")
+        r.register("consolidate", self._cmd_consolidate, "run memory consolidation now")
+        r.register("curiosity", self._cmd_curiosity, "show knowledge-gap questions")
+        r.register("provider", self._cmd_provider, "show AI provider health/selection")
+        r.register("health", self._cmd_health, "run self-maintenance diagnostics")
         r.alias("?", "help")
 
     # -- REPL ----------------------------------------------------------
@@ -202,7 +209,7 @@ class InteractiveShell:
         if not jobs:
             return StructuredResult.success("jobs", "no jobs")
         body = [f"{job.id[:8]:<10} {job.status.value:<10} {job.name:<28} "
-                f"{'periodic' if job.periodic else 'one-shot'}"]
+                f"{'periodic' if job.periodic else 'one-shot'}" for job in jobs]
         return StructuredResult.success("jobs", "\n".join(body), title="Scheduler jobs:")
 
     def _cmd_mem(self, shell, cmd: Command) -> StructuredResult:
@@ -301,6 +308,67 @@ class InteractiveShell:
             return StructuredResult.failure("sensors", "no kernel bound")
         snapshot = self.kernel.perception.snapshot()
         return StructuredResult.success("sensors", json.dumps(snapshot, default=str, indent=2))
+
+    # -- observability / intelligence -------------------------------
+
+    def _intel_view(self, section: str) -> StructuredResult:
+        if self.kernel is None:
+            return StructuredResult.failure("intel", "no kernel bound")
+        view = getattr(self.kernel, "intel_view", None)
+        if view is None:
+            return StructuredResult.failure("intel", "intelligence layer unavailable")
+        return StructuredResult.success("intel",
+                                        json.dumps(view(section), default=str, indent=2))
+
+    def _cmd_intel(self, shell, cmd: Command) -> StructuredResult:
+        if not cmd.args:
+            payload = self._intel_view("health")
+            payload.data = "available sections: nervous rhythm attention world memory " \
+                           "goals plans providers curiosity reflection suggestions " \
+                           "agents health orchestrator episodic procedural learning"
+            return payload
+        return self._intel_view(cmd.args[0])
+
+    def _cmd_goal(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None:
+            return StructuredResult.failure("goal", "no kernel bound")
+        if cmd.args and cmd.args[0] == "run":
+            goal = " ".join(cmd.args[1:])
+            if not goal:
+                return StructuredResult.failure("goal", "usage: goal run <goal text>")
+            runner = getattr(self.kernel, "process_goal", None)
+            if runner is None:
+                return StructuredResult.failure("goal", "goal execution unavailable")
+            return StructuredResult.success(
+                "goal", json.dumps(runner(goal), default=str, indent=2))
+        return self._intel_view("goals")
+
+    def _cmd_reflect_now(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None:
+            return StructuredResult.failure("reflect", "no kernel bound")
+        runner = getattr(self.kernel, "reflect_now", None)
+        if runner is None:
+            return StructuredResult.failure("reflect", "reflection unavailable")
+        return StructuredResult.success("reflect",
+                                        json.dumps(runner(), default=str, indent=2))
+
+    def _cmd_consolidate(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None:
+            return StructuredResult.failure("consolidate", "no kernel bound")
+        runner = getattr(self.kernel, "consolidate_now", None)
+        if runner is None:
+            return StructuredResult.failure("consolidate", "consolidation unavailable")
+        return StructuredResult.success("consolidate",
+                                        json.dumps(runner(), default=str, indent=2))
+
+    def _cmd_curiosity(self, shell, cmd: Command) -> StructuredResult:
+        return self._intel_view("curiosity")
+
+    def _cmd_provider(self, shell, cmd: Command) -> StructuredResult:
+        return self._intel_view("providers")
+
+    def _cmd_health(self, shell, cmd: Command) -> StructuredResult:
+        return self._intel_view("health")
 
 
 def _input_gen():

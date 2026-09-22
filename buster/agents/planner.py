@@ -16,7 +16,7 @@ from typing import Optional
 from buster.agents.base import Agent, AgentRun, AgentStatus
 from buster.ai_providers.base import AIMessage, AIProvider
 
-_ACTION_RE = re.compile(r"\{[^{}]*\"action\"[^{}]*\}", re.DOTALL)
+_ACTION_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 class PlannerAgent(Agent):
@@ -39,6 +39,7 @@ class PlannerAgent(Agent):
         transcript = self._build_transcript(target, provider)
 
         try:
+            executed = False
             for _ in range(max(self.max_steps, 1)):
                 reply = self._ask(provider, transcript, target)
                 if reply is None:
@@ -49,9 +50,11 @@ class PlannerAgent(Agent):
                     run.history.append({"phase": "step", "action": "done"})
                     break
 
-                action, params = self._parse_action(reply, target)
+                action, params = self._parse_action(
+                    reply, target, bootstrap=not executed)
                 if action is None:
-                    continue
+                    break  # provider stopped producing steps
+                executed = True
 
                 result = self._execute(action, params, target)
                 run.history.append({"phase": "step", "action": action,
@@ -111,7 +114,8 @@ class PlannerAgent(Agent):
     def _is_finished(reply: str) -> bool:
         return "DONE" in reply.upper()
 
-    def _parse_action(self, reply: str, goal: str) -> tuple[Optional[str], dict]:
+    def _parse_action(self, reply: str, goal: str,
+                      bootstrap: bool = False) -> tuple[Optional[str], dict]:
         match = _ACTION_RE.search(reply)
         if match:
             try:
@@ -122,6 +126,10 @@ class PlannerAgent(Agent):
                     return action, params
             except ValueError:
                 pass
+        if bootstrap:
+            # Seed the loop deterministically when the provider offered no step.
+            fallback = _fallback_ask(goal, [])
+            return self._parse_action(fallback, goal, bootstrap=False)
         return None, {}
 
     def _known_action(self, action: str) -> bool:

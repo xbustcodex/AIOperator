@@ -5,6 +5,66 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-09-22
+
+### Added — intelligent Buster phone node
+The foundation (kernel, single daemon, RPC, capabilities, permissions, audit,
+PlannerAgent, reflection, experience, TerminalP) is extended in place into one
+coherent cognitive system without introducing a second runtime.
+
+- **Basal nervous system** (`intelligence/nervous.py`): heartbeat, node
+  health, idle/activity/sleep detection, battery/charging/thermal, CPU,
+  memory, storage, network, capability, provider, job and host signals.
+  Converts raw sensor data into normalized, deduplicated signals; no LLM.
+- **Cognitive rhythm** (`intelligence/rhythm.py`): deterministic state machine
+  (active, background, idle, reflection, maintenance, constrained, degraded,
+  recovery, sleep) that gates expensive cognition.
+- **Attention** (`intelligence/attention.py`): scores signals by relevance,
+  urgency, novelty, goals and rhythm; suppresses routine noise.
+- **World model** expansion (`kernel/world_model.py`): observed vs inferred
+  facts with provenance/confidence, entities, and a bounded event history.
+- **Memory architecture** (`intelligence/memory.py`): working, episodic and
+  procedural memory plus a MemoryCoordinator for ranked retrieval,
+  consolidation, contradiction detection, TTL expiry and diagnostics.
+- **Learning** (`intelligence/learning.py`): context→intention→plan→action→
+  result→evaluation→lesson cycles; capability reliability tracking;
+  procedural recipe reliability. Learning never grants authority.
+- **Reflection** (`intelligence/reflection.py`): bounded, trigger-driven
+  passes producing lessons, hypotheses and unresolved questions.
+- **Curiosity** (`intelligence/curiosity.py`): prioritized knowledge-gap
+  questions (repeated failures, stalled goals, unused capabilities).
+- **Goals** (`intelligence/goals.py`): persisted goal registry (not a
+  scheduler) with priorities, dependencies, status, progress, provenance.
+- **Plans** (`intelligence/plans.py`): persisted structured plans with
+  capability-based steps, replanning and step outcomes.
+- **Agent roles** (`intelligence/agents.py`): planner/researcher/builder/
+  tester/reviewer/fixer/observer/memory-worker/maintenance-worker over ONE
+  shared PlannerAgent architecture with capability-prefix constraints.
+- **Cognitive orchestration** (`intelligence/orchestration.py`): an
+  event-driven, scheduler-backed loop (sense→attend→world→memory→goals→plan→
+  act→observe→learn→reflect) with bounded, resource-aware ticks.
+- **Proactive intelligence** (`intelligence/proactive.py`): structured,
+  non-executing suggestions (recurring failures, resources, unfinished goals,
+  maintenance opportunities, connectivity recovery).
+- **Self-maintenance** (`intelligence/maintenance.py`): diagnostics across
+  runtime/config/memory/capabilities/providers/scheduler/RPC/audit/TerminalP
+  plus bounded recovery.
+- **Provider intelligence** (`intelligence/providers.py`): local-first health
+  and selection; graceful degradation without cloud inference.
+- **Observability**: `intel <section>` (nervous, rhythm, attention, world,
+  memory, goals, plans, providers, curiosity, reflection, suggestions,
+  agents, health) via shell, CLI and RPC; `goal`, `reflect`, `consolidate`,
+  `health` shell/CLI commands and RPC ops.
+- **Tests**: 132 passing, including `test_intelligence.py` (signals, rhythm,
+  attention, memory, learning, reflection, curiosity, goals, plans, roles,
+  proactive, maintenance, providers) and `test_cognitive_loop.py` (full loop,
+  permission boundaries, restart persistence/no-duplicates, offline provider
+  degradation, RPC access).
+
+### Changed
+- Version 0.2.0. World-model snapshot now includes observed/inferred facts,
+  entities and a bounded event history while retaining the existing keys.
+
 ## [0.1.1] - 2026-09-22
 
 ### Changed

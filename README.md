@@ -7,6 +7,13 @@ interactive shell — all stdlib-only and built to run within typical Android
 device constraints. TerminalP is the first-class phone host; Termux-class
 Android terminals remain supported for compatibility.
 
+Buster 0.2 is a coherent intelligent phone node: a basal nervous system,
+cognitive rhythm and attention layer, an expanded memory architecture
+(working/episodic/experience/semantic/procedural), learning, bounded
+reflection, curiosity, persisted goals and plans, specialized agent roles,
+proactive suggestions, self-maintenance and provider intelligence — all
+running through the single Kernel and its permission/audit architecture.
+
 ## Status
 
 Foundational release (v0.1.0) covering the full kernel-to-shell stack:
@@ -27,9 +34,12 @@ Foundational release (v0.1.0) covering the full kernel-to-shell stack:
 - **Security**: deny-by-default, execution context, delete protection,
   elevation approval, audit trail.
 - **Interactive shell**: quote-aware parser, command registry, kernel + 
-  capability dispatch, job control, structured results.
+  capability dispatch, job control, structured results, and intelligence
+  commands (`intel`, `goal`, `reflect`, `consolidate`, `curiosity`,
+  `provider`, `health`, `think`, `learn`, `exp`).
 - **CLI**: `start`, `status`, `doctor`, `version`, `shell`, plus management
-  commands (`caps`, `run`, `grant`, `deny`, `config`, `jobs`, `audit`).
+  commands (`caps`, `run`, `grant`, `deny`, `config`, `jobs`, `audit`,
+  `intel`, `goal`, `health`).
 
 ## Requirements
 

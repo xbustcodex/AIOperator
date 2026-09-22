@@ -62,6 +62,21 @@ buster/
 │   │   └── session.py      # REPL + kernel dispatch + job control
 │   ├── runtime.py          # Single-runtime lock, daemon server, RPC client
 │   ├── bootstrap.py        # Offline install/init + runtime seed
+│   ├── intelligence/       # Cognition layer (plugs into the single Kernel)
+│   │   ├── nervous.py      # Basal nervous system: signals + node health
+│   │   ├── rhythm.py       # Cognitive rhythm state machine
+│   │   ├── attention.py    # Attention prioritization (noise-suppressed)
+│   │   ├── memory.py       # Working/episodic/procedural + memory coordinator
+│   │   ├── goals.py        # Persisted goal registry (not a scheduler)
+│   │   ├── plans.py        # Persisted structured plans + replanning
+│   │   ├── learning.py     # Context→…→lesson cycles, capability reliability
+│   │   ├── reflection.py   # Bounded reflection (lessons/hypotheses/questions)
+│   │   ├── curiosity.py    # Prioritized knowledge-gap questions
+│   │   ├── agents.py       # Role configs over one PlannerAgent architecture
+│   │   ├── proactive.py    # Non-executing suggestions
+│   │   ├── maintenance.py  # Self-observation + bounded recovery
+│   │   ├── providers.py    # Local-first provider health/selection
+│   │   └── orchestration.py# Event-driven cognitive loop on the scheduler
 │   ├── cli/                # `buster` command entry points
 │   │   ├── main.py         # dispatch
 │   │   └── commands.py     # lifecycle (bootstrap/start/status/shell/stop)

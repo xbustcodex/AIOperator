@@ -102,6 +102,10 @@ class Kernel:
         self.perception.register(NetworkSensor())
         self.perception.register(ResourcesSensor())
 
+        # -- intelligence layer (plugs into the single kernel) --------
+        from buster.intelligence import install_intelligence
+        self.intel = install_intelligence(self)
+
         self.logger = logging.getLogger("buster.kernel.core")
 
     # -- lifecycle -----------------------------------------------------
@@ -128,6 +132,7 @@ class Kernel:
         self.state = "running"
         self.event_router.emit("kernel.started", {"version": get_version()})
         self.audit.record("kernel.start", "kernel", {"version": get_version()})
+        self.intel.start()
         self.logger.info("Buster OS kernel running.")
 
     def stop(self) -> None:
@@ -140,6 +145,11 @@ class Kernel:
         self.scheduler.stop()
 
         self.world_model.component_status("kernel", "stopped")
+
+        try:
+            self.intel.stop()
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Intelligence stop failed")
 
         try:
             self.memory.reflection.reflect(self.memory.experience.recall(limit=20))
@@ -201,6 +211,24 @@ class Kernel:
             "steps": len(run.history),
             "result": run.result,
         }
+
+    def intel_view(self, section: str = "health") -> dict:
+        """Observability surface for the intelligence layer (serializable)."""
+        if getattr(self, "intel", None) is None:
+            return {"error": "intelligence layer not installed"}
+        return self.intel.view(section)
+
+    def process_goal(self, goal_text: str, kind: str = "user",
+                     tentative: bool = False) -> dict:
+        """Run the full cognitive loop for a goal (plugs into the single kernel)."""
+        return self.intel.orchestrator.process_goal(goal_text, kind=kind,
+                                                    tentative=tentative)
+
+    def reflect_now(self, reason: str = "shell") -> dict:
+        return {"produced": self.intel.reflection.reflect_now(reason=reason)}
+
+    def consolidate_now(self) -> dict:
+        return self.intel.memory.consolidate()
 
     # -- internal helpers ----------------------------------------------
 
