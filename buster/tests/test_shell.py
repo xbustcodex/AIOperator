@@ -79,7 +79,8 @@ class InteractiveShellTests(unittest.TestCase):
         self.kernel.permissions.grant("android.info")
         result = self.shell.run_one("run android.info")
         self.assertTrue(result.ok, result.error)
-        self.assertIn("termux", result.data)
+        self.assertIn("host", result.data)
+        self.assertIn("phone_host", result.data)
 
     def test_run_with_params(self):
         self.kernel.permissions.grant("python.eval")
@@ -111,6 +112,16 @@ class InteractiveShellTests(unittest.TestCase):
         got = self.shell.run_one("mem greeting")
         self.assertTrue(got.ok)
         self.assertEqual(got.data, "hello")
+
+    def test_think_learn_exp(self):
+        think = self.shell.run_one("think inspect environment")
+        self.assertTrue(think.ok, think.error)
+        self.assertIn("status:", think.data)
+        learn = self.shell.run_one("learn")
+        self.assertTrue(learn.ok)
+        exp = self.shell.run_one("exp")
+        self.assertTrue(exp.ok)
+        self.assertIn("total=", exp.data)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,19 @@ class KnowledgeMemory:
     def keys(self) -> list[str]:
         return sorted(self._entries.keys())
 
+    def search(self, prefix: str = "", limit: Optional[int] = None) -> list[dict]:
+        """Return entries whose key starts with ``prefix`` (newest first)."""
+        matches = [
+            e for e in self._entries.values()
+            if e.key.startswith(prefix)
+        ]
+        matches.sort(key=lambda e: e.updated, reverse=True)
+        if limit is not None:
+            matches = matches[:limit]
+        return [{"key": e.key, "value": e.value, "source": e.source,
+                 "confidence": e.confidence, "updated": e.updated}
+                for e in matches]
+
     def clear(self) -> None:
         self._entries.clear()
         self._save()

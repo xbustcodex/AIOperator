@@ -4,8 +4,11 @@ import os
 import unittest
 
 from buster.perception.base import SensorHub
+from buster.perception.battery import BatterySensor
 from buster.perception.device import DeviceSensor
 from buster.perception.environment import EnvironmentSensor
+from buster.perception.network import NetworkSensor
+from buster.perception.resources import ResourcesSensor
 
 
 class PerceptionTests(unittest.TestCase):
@@ -13,12 +16,19 @@ class PerceptionTests(unittest.TestCase):
         observation = DeviceSensor().observe()
         self.assertIn("platform", observation)
         self.assertIn("machine", observation)
-        self.assertIn("termux", observation)
+        self.assertIn("host", observation)
+        self.assertIn("phone_host", observation)
 
     def test_environment_sensor(self):
         observation = EnvironmentSensor().observe()
         self.assertIn("cwd", observation)
         self.assertIn("disk", observation)
+
+    def test_extended_sensors(self):
+        battery = BatterySensor().observe()
+        self.assertTrue(any(k in battery for k in ("source", "error")))
+        self.assertIn("hostname", NetworkSensor().observe())
+        self.assertIn("cpus", ResourcesSensor().observe())
 
     def test_sensor_hub_snapshot(self):
         hub = SensorHub()

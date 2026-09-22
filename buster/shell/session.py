@@ -47,6 +47,9 @@ class InteractiveShell:
         r.register("mem", self._cmd_mem, "show persistent memory; 'mem put <k> <v>'")
         r.register("audit", self._cmd_audit, "show recent audit tail")
         r.register("plan", self._cmd_plan, "run an orchestrator agent over a goal")
+        r.register("think", self._cmd_think, "run the deliberate planner agent: think <goal>")
+        r.register("learn", self._cmd_learn, "show learned knowledge: learn [prefix]")
+        r.register("exp", self._cmd_exp, "show experience statistics")
         r.register("sensors", self._cmd_sensors, "collect perception sensor snapshot")
         r.alias("?", "help")
 
@@ -250,6 +253,48 @@ class InteractiveShell:
         if isinstance(run.result, dict):
             body.append(json.dumps(run.result, default=str, indent=2))
         return StructuredResult.success("plan", "\n".join(body))
+
+    def _cmd_think(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None:
+            return StructuredResult.failure("think", "no kernel bound")
+        goal = " ".join(cmd.args)
+        if not goal:
+            return StructuredResult.failure("think", "usage: think <goal text>")
+        runner = getattr(self.kernel, "run_planner", None)
+        if runner is not None:
+            run = runner(goal)
+        else:
+            from buster.agents.planner import PlannerAgent
+            run = PlannerAgent(kernel=self.kernel).run(goal).__dict__
+        body = [f"status: {run.get('status')}"]
+        if run.get("error"):
+            body.append(f"error: {run['error']}")
+        if run.get("result") is not None:
+            body.append(json.dumps(run["result"], default=str, indent=2))
+        return StructuredResult.success("think", "\n".join(body))
+
+    def _cmd_learn(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None or getattr(self.kernel, "memory", None) is None:
+            return StructuredResult.failure("learn", "no memory subsystem bound")
+        prefix = cmd.args[0] if cmd.args else ""
+        entries = self.kernel.memory.knowledge.search(prefix, limit=cmd.option("limit", 20))
+        if not entries:
+            return StructuredResult.success("learn", "(no knowledge)")
+        body = [f"{e['key']}: {e['value']}" for e in entries]
+        return StructuredResult.success("learn", "\n".join(body))
+
+    def _cmd_exp(self, shell, cmd: Command) -> StructuredResult:
+        if self.kernel is None or getattr(self.kernel, "memory", None) is None:
+            return StructuredResult.failure("exp", "no memory subsystem bound")
+        stats = self.kernel.memory.experience.stats()
+        body = [
+            f"total={stats['total']} done={stats['done']} failed={stats['failed']} "
+            f"success_rate={stats['success_rate']}",
+        ]
+        if stats["top_goals"]:
+            body.append("top goals:")
+            body += [f"  {goal[:50]}: {count}" for goal, count in stats["top_goals"]]
+        return StructuredResult.success("exp", "\n".join(body))
 
     def _cmd_sensors(self, shell, cmd: Command) -> StructuredResult:
         if self.kernel is None:

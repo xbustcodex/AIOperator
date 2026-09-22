@@ -5,6 +5,27 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-09-22
+
+### Changed
+- **TerminalP is now the first-class phone host** for Buster OS. Host
+  detection (`host_identity`) recognizes TerminalP prefixes and the
+  `TERMINALP_VERSION` marker, and reports host identity wherever device
+  facts are surfaced (doctor, installer, perception, `android.info`).
+- Installer and doctor no longer refuse or fail on TerminalP: any Termux-class
+  Android terminal (`/data/data/.../files/usr`, TerminalP or Termux markers)
+  is accepted as a valid host.
+- Host API bridge prefers the `terminalp-api` binary and falls back to
+  `termux-api` for compatibility; capabilities and sensors report the
+  detected binary name.
+- Documentation and CLI banner updated to describe TerminalP as the Buster
+  OS phone host; Termux-class compatibility preserved.
+
+### Added
+- Host-detection acceptance tests (`test_host.py`): TerminalP prefix / env
+  marker detection, generic Android terminal acceptance, doctor and
+  installer acceptance.
+
 ## [0.1.0] - 2026-09-20
 
 ### Added
@@ -32,7 +53,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   `write` / `close` / `run`).
 - Python runner (`python.eval` / `python.exec`) with a jailed namespace.
 - Git (`git.status/log/branch/clone/add/commit/pull`).
-- Android/Termux (`android.info` / `battery` / `sensors`).
+- Android/TerminalP (`android.info` / `battery` / `sensors`; TerminalP-first,
+  Termux-class compatible).
 - Process/system (`process.list` / `process.kill` / `system.info`).
 - Networking (`net.get` / `net.post` / `net.dns` / `net.ping`) via stdlib.
 

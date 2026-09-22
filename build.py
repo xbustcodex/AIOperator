@@ -95,7 +95,7 @@ def cli_smoke() -> bool:
     ]
     for command, label in checks:
         result = run(command)
-        # doctor returns 1 on a healthy-but-non-Termux host; count <=1 as PASS.
+        # doctor returns 1 on a healthy-but-non-phone host; count <=1 as PASS.
         acceptable = result.returncode in (0, 1) if label == "doctor" else result.returncode == 0
         status = "PASS" if acceptable else f"NONZERO({result.returncode})"
         ok = ok and acceptable

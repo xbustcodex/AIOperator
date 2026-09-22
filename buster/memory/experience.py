@@ -3,6 +3,7 @@
 import json
 import os
 import time
+from collections import Counter
 from typing import Any, Optional
 
 
@@ -28,6 +29,35 @@ class ExperienceMemory:
 
     def count(self) -> int:
         return len(self._lines())
+
+    def stats(self) -> dict:
+        """Aggregate learning statistics over recorded experiences."""
+        entries = self.recall()
+        total = len(entries)
+        if not total:
+            return {"total": 0, "done": 0, "failed": 0, "success_rate": None,
+                    "top_goals": [], "top_failures": []}
+
+        def _bucket(value: Any, size: int = 60) -> str:
+            text = str(value or "")
+            return text[:size]
+
+        statuses = Counter(entry.get("status") for entry in entries)
+        done = statuses.get("done", 0)
+        failed = statuses.get("failed", 0)
+        goals = Counter(_bucket(entry.get("target")) for entry in entries)
+        failures = Counter(
+            _bucket(entry.get("error")) for entry in entries
+            if entry.get("status") == "failed"
+        )
+        return {
+            "total": total,
+            "done": done,
+            "failed": failed,
+            "success_rate": round(done / total, 3) if total else None,
+            "top_goals": goals.most_common(8),
+            "top_failures": failures.most_common(8),
+        }
 
     def clear(self) -> None:
         try:

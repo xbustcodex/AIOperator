@@ -24,7 +24,7 @@ def _run_command(cmd: str, cwd: Optional[str] = None, timeout: Optional[float] =
 
 
 class ShellCapability(Capability):
-    """Run commands through the system shell (Termux /bin/sh)."""
+    """Run commands through the system shell (TerminalP ``/bin/sh``)."""
 
     name = "shell"
     actions_list = ["shell.run", "shell.check"]

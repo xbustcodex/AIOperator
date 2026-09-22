@@ -9,7 +9,7 @@ their own.
 Transport
     The daemon and clients exchange JSON request/response files under
     ``install/state/rpc/``. This channel is deterministic on every OS
-    (Windows dev host and Termux/Linux alike) and imposes no scheduler or
+    (Windows dev host and TerminalP/Linux alike) and imposes no scheduler or
     kernel load while idle.
 
 Layout

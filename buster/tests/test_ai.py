@@ -67,5 +67,24 @@ class OrchestrationTests(unittest.TestCase):
             kernel.stop()
 
 
+class PlannerAgentTests(unittest.TestCase):
+    def test_run_planner_without_provider(self):
+        install = tempfile.mkdtemp()
+        config = Config(config_path=os.path.join(install, "config.json"))
+        config.set("install_path", install + os.sep)
+        kernel = Kernel(config=config)
+        kernel.start()
+        try:
+            run = kernel.run_planner("inspect the environment")
+            self.assertIn(run["status"], ("done", "failed"))
+            self.assertGreaterEqual(run["steps"], 0)
+            self.assertGreaterEqual(kernel.memory.experience.count(), 1)
+            # reflection distilled the run into an "agent_working" knowledge entry
+            self.assertTrue(any(k.startswith("agent_working:planner")
+                                for k in kernel.memory.knowledge.keys()))
+        finally:
+            kernel.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

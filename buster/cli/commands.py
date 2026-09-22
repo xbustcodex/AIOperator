@@ -318,7 +318,7 @@ def cmd_audit(args) -> int:
 
 def cmd_help(args) -> int:
     print(
-        "Buster OS - AI-native environment for Termux\n"
+        "Buster OS - AI-native phone node for TerminalP\n"
         "\n"
         "Usage: buster <command> [options]\n"
         "\n"

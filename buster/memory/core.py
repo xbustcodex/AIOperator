@@ -1,7 +1,8 @@
 """JSON-backed memory store for Buster OS.
 
 A lightweight, dependency-free persistent key/value memory with optional
-expiry. Suitable for the resource-constrained Termux environment while a
+expiry. Suitable for the resource-constrained TerminalP (Termux-class) phone
+environment while a
 more advanced vector store can be swapped in later through the same API.
 """
 

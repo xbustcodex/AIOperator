@@ -5,7 +5,7 @@ import platform
 import sys
 from dataclasses import dataclass, field
 
-from buster.android_integration.device import is_termux
+from buster.android_integration.device import host_identity, is_termux_compatible
 from buster.config import Config
 from buster.version import get_version
 
@@ -28,9 +28,9 @@ def run_doctor() -> DoctorReport:
     report.add("python-version",
                ok=sys.version_info >= (3, 10),
                detail=f"{platform.python_version()} (>= 3.10 required)")
-    report.add("termux-environment",
-               ok=is_termux(),
-               detail=os.environ.get("PREFIX", "not set"))
+    report.add("host-environment",
+               ok=is_termux_compatible(),
+               detail=f"{host_identity()} ({os.environ.get('PREFIX', 'no PREFIX set')})")
     report.add("buster-install",
                ok=os.path.isdir(os.path.expanduser("~/.buster")),
                detail=os.path.expanduser("~/.buster"))

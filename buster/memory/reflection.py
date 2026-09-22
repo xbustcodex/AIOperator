@@ -22,7 +22,12 @@ class ReflectionEngine:
     def __post_init__(self):
         self.logger = logging.getLogger("buster.memory.reflection")
         if not self.hooks:
-            self.hooks = [reflect_failures, reflect_targets]
+            self.hooks = [
+                reflect_failures,
+                reflect_targets,
+                reflect_winning_patterns,
+                reflect_agent_usage,
+            ]
 
     def on_experience(self, entry: dict) -> None:
         """Run hooks against a single fresh experience record."""
@@ -69,5 +74,30 @@ def reflect_targets(entry: dict) -> Optional[dict]:
             "value": entry.get("status", "unknown"),
             "source": "reflection:targets",
             "confidence": 0.3,
+        }
+    return None
+
+
+def reflect_winning_patterns(entry: dict) -> Optional[dict]:
+    """Remember a documented winning pattern for a successful goal shape."""
+    if entry.get("status") == "done" and entry.get("target"):
+        return {
+            "key": f"pattern:{entry['target'][:60]}",
+            "value": "done",
+            "source": "reflection:patterns",
+            "confidence": 0.6,
+        }
+    return None
+
+
+def reflect_agent_usage(entry: dict) -> Optional[dict]:
+    """Track which agents complete goals, feeding routing decisions."""
+    agent = entry.get("agent")
+    if agent and entry.get("status") == "done":
+        return {
+            "key": f"agent_working:{agent}",
+            "value": entry.get("target", "")[:80],
+            "source": "reflection:agents",
+            "confidence": 0.4,
         }
     return None

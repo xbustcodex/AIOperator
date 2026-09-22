@@ -1,8 +1,9 @@
-"""Device sensor: hardware and Android/Termux platform facts."""
+"""Device sensor: hardware and Android/TerminalP host facts."""
 
 import os
 import platform
 
+from buster.android_integration.device import host_identity, is_termux_compatible
 from buster.perception.base import Sensor
 
 
@@ -20,7 +21,8 @@ class DeviceSensor(Sensor):
             "release": uname.release,
             "python_version": platform.python_version(),
             "prefix": os.environ.get("PREFIX", ""),
-            "termux": "termux" in os.environ.get("PREFIX", "").lower(),
+            "host": host_identity(),
+            "phone_host": is_termux_compatible(),
             "cpus": os.cpu_count(),
         }
 

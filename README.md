@@ -1,10 +1,11 @@
 # Buster OS
 
-An AI-native operating environment for **Termux on Android**. Buster OS
+An AI-native operating environment for **TerminalP on Android**. Buster OS
 provides a single runtime for AI agents on mobile: a unified event bus,
 scheduler, capability system, memory subsystem, perception, security and an
 interactive shell — all stdlib-only and built to run within typical Android
-device constraints.
+device constraints. TerminalP is the first-class phone host; Termux-class
+Android terminals remain supported for compatibility.
 
 ## Status
 
@@ -17,7 +18,7 @@ Foundational release (v0.1.0) covering the full kernel-to-shell stack:
   event lifecycle and audit hooks, compatibility adapters
   (`FunctionCapability`, `LegacyRouterAdapter`).
 - **Core capabilities**: filesystem, shell, terminal, Python (`eval`/`exec`),
-  git, Android/Termux, process/system, networking.
+  git, Android/TerminalP, process/system, networking.
 - **AI**: provider registry, on-device local provider, OpenAI-compatible
   remote provider (stdlib only), agent orchestration loop.
 - **Memory**: persistent store with TTL, experience log, learned knowledge,
@@ -32,9 +33,10 @@ Foundational release (v0.1.0) covering the full kernel-to-shell stack:
 
 ## Requirements
 
-- Termux on Android (aarch64 recommended)
+- **TerminalP** on Android (Termux-class terminal; aarch64 recommended)
+  — TerminalP is the host that runs the Buster OS phone node.
 - Python 3.10+
-- Standard Linux utilities (`git`, `ping`, shell)
+- Standard Linux utilities (`git`, `ping`, shell, host `pkg`/API binaries)
 
 ## Installation
 

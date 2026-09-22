@@ -28,6 +28,16 @@ from buster.memory.experience import ExperienceMemory
 from buster.memory.knowledge import KnowledgeMemory
 from buster.memory.reflection import ReflectionEngine
 from buster.perception.base import SensorHub
+from buster.perception.battery import BatterySensor
+from buster.perception.device import DeviceSensor
+from buster.perception.environment import EnvironmentSensor
+from buster.perception.network import NetworkSensor
+from buster.perception.resources import ResourcesSensor
+from buster.logging import setup_logging
+from buster.memory.experience import ExperienceMemory
+from buster.memory.knowledge import KnowledgeMemory
+from buster.memory.reflection import ReflectionEngine
+from buster.perception.base import SensorHub
 from buster.perception.device import DeviceSensor
 from buster.perception.environment import EnvironmentSensor
 from buster.security.elevation import ElevationManager
@@ -88,6 +98,9 @@ class Kernel:
         self.perception = SensorHub()
         self.perception.register(DeviceSensor())
         self.perception.register(EnvironmentSensor())
+        self.perception.register(BatterySensor())
+        self.perception.register(NetworkSensor())
+        self.perception.register(ResourcesSensor())
 
         self.logger = logging.getLogger("buster.kernel.core")
 
@@ -127,8 +140,6 @@ class Kernel:
         self.scheduler.stop()
 
         self.world_model.component_status("kernel", "stopped")
-        self.audit.record("kernel.stop", "kernel")
-        self.event_router.stop()
 
         try:
             self.memory.reflection.reflect(self.memory.experience.recall(limit=20))
@@ -174,6 +185,21 @@ class Kernel:
             "ai_providers": self.ai.providers.names(),
             "agents": [a.name for a in self.agent_manager.list_agents()],
             "jobs": [{"name": j.name, "status": j.status.value} for j in self.scheduler.list_jobs()],
+        }
+
+    # -- intelligence helpers -----------------------------------------
+
+    def run_planner(self, goal: str, provider: Optional[str] = None,
+                    max_steps: int = 8) -> dict:
+        """Run the deliberate PlannerAgent against this kernel."""
+        from buster.agents.planner import PlannerAgent
+        run = PlannerAgent(kernel=self, max_steps=max_steps).run(
+            goal, provider=provider)
+        return {
+            "status": run.status.value,
+            "error": run.error,
+            "steps": len(run.history),
+            "result": run.result,
         }
 
     # -- internal helpers ----------------------------------------------

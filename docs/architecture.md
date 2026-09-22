@@ -1,8 +1,9 @@
 # Buster OS Architecture
 
-Buster OS is an AI-native operating environment for **Termux on Android**,
+Buster OS is an AI-native operating environment for **TerminalP on Android**,
 built with strict architectural discipline: one runtime, one event bus, one
-scheduler, one source of truth.
+scheduler, one source of truth. TerminalP is the first-class phone host;
+Termux-class Android terminals are recognized for compatibility.
 
 ## Layout
 
@@ -65,7 +66,7 @@ buster/
 │   │   ├── main.py         # dispatch
 │   │   └── commands.py     # lifecycle (bootstrap/start/status/shell/stop)
 │   │                       # + management commands
-│   ├── android_integration/# Termux / device detection
+│   ├── android_integration/# TerminalP / Termux-class detection + API
 │   ├── diagnostics/        # Doctor / health checks
 │   ├── workspace/          # Isolated workspaces with traversal guards
 │   └── tests/              # Unit + integration + compatibility tests

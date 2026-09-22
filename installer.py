@@ -1,9 +1,14 @@
-"""Buster OS installer - idempotent environment setup for Termux."""
+"""Buster OS installer - idempotent environment setup for TerminalP.
+
+TerminalP is the first-class phone host; Termux-class environments are also
+recognized. Installation only proceeds inside a valid Android terminal host.
+"""
 
 import logging
 import os
 import sys
 
+from buster.android_integration.device import host_identity, is_termux_compatible
 from buster.config import Config
 from buster.logging import setup_logging
 
@@ -23,8 +28,8 @@ SUBDIRS = [
 ]
 
 
-def verify_termux_environment() -> bool:
-    return "com.termux" in os.environ.get("PREFIX", "")
+def verify_host_environment() -> bool:
+    return is_termux_compatible()
 
 
 def create_directories(base_path: str) -> None:
@@ -33,9 +38,9 @@ def create_directories(base_path: str) -> None:
 
 
 def main() -> int:
-    if not verify_termux_environment():
-        print("[FAIL] Not running inside a Termux environment.")
-        print("       Buster OS targets Termux on Android.")
+    if not verify_host_environment():
+        print("[FAIL] Not running inside a supported phone terminal.")
+        print("       Buster OS targets TerminalP (Termux-class Android terminal) on Android.")
         return 1
 
     create_directories(INSTALL_BASE)
@@ -45,8 +50,8 @@ def main() -> int:
     config = Config(config_path=os.path.join(INSTALL_BASE, "config", "config.json"))
     logging.info("Configuration initialized at %s", config.config_path)
 
-    print("\nBuster OS installation completed successfully!")
-    print("Run 'buster start' to launch the environment.")
+    print(f"\nBuster OS installation completed successfully on {host_identity()}!")
+    print("Run 'buster bootstrap' then 'buster start' to launch the environment.")
     return 0
 
 
