@@ -60,7 +60,7 @@ class SeedRuntimeTests(unittest.TestCase):
         try:
             first = seed_runtime(kernel)
             self.assertTrue(first["seeded"])
-            self.assertEqual(kernel.memory.knowledge.recall("bootstrap.version"), "0.3.1")
+            self.assertEqual(kernel.memory.knowledge.recall("bootstrap.version"), "0.3.2")
             self.assertGreaterEqual(kernel.memory.experience.count(), 1)
             second = seed_runtime(kernel)
             self.assertFalse(second["seeded"])

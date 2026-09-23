@@ -93,7 +93,12 @@ Produces (per supported architecture and for the release):
 - `dist/release.json`, `dist/candidates-report.json`, `dist/SHA256SUMS`
 
 Verification is architecture-aware (ELF class/machine, dynamic loader, dpkg
-database, Buster installation, filesystem identity). Artifacts built here are
+database, Buster installation, filesystem identity) and now also inspects the
+**archived** Unix metadata directly: executables (including the dynamic
+loader) must be executable, configuration/data files must not be, directories
+must be searchable, and merged-/usr aliases must be symlinks. Package file
+modes are preserved from `.deb` payloads through an authoritative metadata
+overlay (never re-derived from staging-FS stat). Artifacts built here are
 constructed and structurally verified; `runtime_executed` is set only when an
 artifact has actually been booted in a matching environment.
 

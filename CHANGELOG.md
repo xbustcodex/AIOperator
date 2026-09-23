@@ -5,6 +5,41 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-09-22
+
+### Fixed — release-blocking rootfs permissions defect
+
+First ARM64 deployment exposed executables recorded in release archives as
+mode 0666 (PRoot: `/bin/bash is not executable`). Root cause: the artifact
+tar was serialized from staging-filesystem ``stat`` data, and staging hosts
+that cannot represent Unix modes report them as 0666.
+
+- **Authoritative metadata overlay** (`buster/osbuild/rootfs.py`): file type,
+  Unix mode and link target are captured directly from each ``.deb`` payload
+  member (and from Buster's own writers) during extraction; the release
+  tarball is now serialized entirely from that overlay via
+  ``Rootfs.pack_tree``, never from staging-tree stat calls.
+- **Merged-/usr handled in the overlay**: package payload paths are normalized
+  to the ``/usr`` layout at extraction (content + metadata), and ``bin``/
+  ``sbin``/``lib``(``/lib64``) are archived as symlinks regardless of whether
+  the build host can create symlinks.
+- Hard-linked and symbolic data.tar members are preserved in the archive;
+  payload bytes that a build host cannot write to disk (e.g. Windows-invalid
+  names) are emitted verbatim with their true Unix names and modes.
+- **Archived-metadata verification added** (`build_rootfs.py`): the produced
+  tarball is inspected directly for executable modes on critical executables
+  and dynamic loaders, non-executable modes on representative configuration/
+  data files, directory search bits (including 0700 `/root`, 1777 `/tmp`),
+  and merged-/usr symlinks — so a broken-permission artifact cannot pass.
+- **Regression tests** (`buster/tests/test_osbuild.py` FileModePreservation,
+  extended `buster/tests/test_multirarch.py`): prove package modes survive
+  ``.deb`` extraction → staging → final release tarball and that the fix does
+  not make everything executable.
+- amd64 and arm64 release artifacts rebuilt and re-verified.
+
+### Changed
+- Version 0.3.2.
+
 ## [0.3.1] - 2026-09-22
 
 ### Added — multi-architecture release pipeline

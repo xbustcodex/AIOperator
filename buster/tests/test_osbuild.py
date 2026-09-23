@@ -266,5 +266,98 @@ class OsDoctorTests(unittest.TestCase):
         self.assertGreaterEqual(len(report.checks), 5)
 
 
+class FileModePreservationTests(unittest.TestCase):
+    """Unix package file modes must survive .deb extraction -> tar archive."""
+
+    def _deb_with_modes(self, control_text: str, files: dict) -> bytes:
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w:gz") as tar:
+            for path, (mode, content) in files.items():
+                info = tarfile.TarInfo("./" + path)
+                info.size = len(content)
+                info.mode = mode
+                tar.addfile(info, io.BytesIO(content))
+        control = tar_gz_member("./control", control_text.encode())
+        return make_ar({
+            "debian-binary": b"2.0\n",
+            "control.tar.gz": control,
+            "data.tar.gz": data.getvalue(),
+        })
+
+    def test_modes_survive_from_deb_to_artifact_tar(self):
+        work = tempfile.mkdtemp()
+        root = Rootfs(work, "amd64")
+        root.build_layout()
+        blob = self._deb_with_modes(
+            "Package: modes-demo\nVersion: 1\nArchitecture: all\n"
+            "Maintainer: T <t@x>\nDescription: d\n",
+            {
+                "usr/bin/tool": (0o755, b"#!/bin/sh\necho tool\n"),
+                "usr/share/doc/tool.txt": (0o644, b"docs\n"),
+                "etc/modes-demo.conf": (0o640, b"secret\n"),
+                "bin/premerge-tool": (0o755, b"#!/bin/sh\necho old-path\n"),
+            })
+        content = deb.extract(blob)
+        data_tar = deb.data_tar(blob)
+        installed = root.install_payload("modes-demo", data_tar)
+
+        # merged-/usr relocation
+        self.assertIn("/usr/bin/premerge-tool", installed)
+        self.assertNotIn("/bin/premerge-tool", installed)
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            root.pack_tree(tar)
+        buf.seek(0)
+        members = {}
+        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+            for member in tar.getmembers():
+                members[member.name] = member
+
+        self.assertEqual(members["usr/bin/tool"].type, tarfile.REGTYPE)
+        self.assertEqual(members["usr/bin/tool"].mode & 0o777, 0o755)
+        self.assertEqual(members["usr/bin/premerge-tool"].mode & 0o777, 0o755)
+        self.assertEqual(members["usr/share/doc/tool.txt"].mode & 0o777, 0o644)
+        self.assertEqual(members["etc/modes-demo.conf"].mode & 0o777, 0o640)
+        self.assertFalse(bool(members["usr/share/doc/tool.txt"].mode & 0o111))
+        self.assertTrue(bool(members["usr/bin/tool"].mode & 0o111))
+        # merged-usr layout members are symlinks
+        self.assertEqual(members["bin"].type, tarfile.SYMTYPE)
+        self.assertEqual(members["bin"].linkname, "usr/bin")
+        self.assertEqual(members["lib"].type, tarfile.SYMTYPE)
+
+    def test_symlink_payload_emitted_in_artifact(self):
+        work = tempfile.mkdtemp()
+        root = Rootfs(work, "amd64")
+        root.build_layout()
+        data = io.BytesIO()
+        with tarfile.open(fileobj=data, mode="w:gz") as tar:
+            link = tarfile.TarInfo("./usr/bin/tool-link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "tool"
+            link.mode = 0o777
+            tar.addfile(link)
+            tool = tarfile.TarInfo("./usr/bin/tool")
+            tool.mode = 0o755
+            tool.size = 4
+            tar.addfile(tool, io.BytesIO(b"tool"))
+        control = tar_gz_member("./control", b"Package: sym\nVersion: 1\n"
+                                          b"Architecture: all\n"
+                                          b"Maintainer: T <t@x>\nDescription: d\n")
+        blob = make_ar({"debian-binary": b"2.0\n", "control.tar.gz": control,
+                        "data.tar.gz": data.getvalue()})
+        data_tar = deb.data_tar(blob)
+        root.install_payload("sym", data_tar)
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            root.pack_tree(tar)
+        buf.seek(0)
+        with tarfile.open(fileobj=buf, mode="r:gz") as tar:
+            names = {m.name: m for m in tar.getmembers()}
+        self.assertEqual(names["usr/bin/tool-link"].type, tarfile.SYMTYPE)
+        self.assertEqual(names["usr/bin/tool-link"].linkname, "tool")
+
+
 if __name__ == "__main__":
     unittest.main()

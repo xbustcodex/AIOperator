@@ -122,15 +122,14 @@ class ArchAwareVerifyTests(unittest.TestCase):
         root.build_layout()
         libdir = root._path(meta.deb_lib_dir())
         os.makedirs(libdir, exist_ok=True)
-        loader = os.path.join(libdir, meta.loaders[0])
-        with open(loader, "wb") as handle:
-            handle.write(make_elf(2, 183))
+        root._record(meta.deb_lib_dir(), "dir", 0o755)
+        root.write_binary(os.path.join(meta.deb_lib_dir(), meta.loaders[0]),
+                          make_elf(2, 183), mode=0o755)
         bindir = root._path("usr/bin")
         os.makedirs(bindir, exist_ok=True)
-        bash = os.path.join(bindir, "bash")
-        with open(bash, "wb") as handle:
-            handle.write(make_elf(2, 183))
-        os.chmod(bash, 0o755)
+        root._record("usr/bin", "dir", 0o755)
+        root.write_binary("usr/bin/bash", make_elf(2, 183), mode=0o755)
+        root.write_binary("usr/bin/ls", b"# fake\n", mode=0o755)
 
         os.makedirs(root._path("var/lib/dpkg"), exist_ok=True)
         with open(root._path("var/lib/dpkg/status"), "w") as handle:
@@ -142,22 +141,30 @@ class ArchAwareVerifyTests(unittest.TestCase):
                          "Status: install ok installed\n\n"
                          "Package: git\nVersion: 1:2.39\nArchitecture: arm64\n"
                          "Status: install ok installed\n\n")
+        root._record("var/lib/dpkg/status", "file", 0o644)
         for rel in ("etc/passwd", "etc/group", "etc/shadow", "etc/nsswitch.conf",
                     "etc/hosts", "etc/fstab", "etc/apt/sources.list",
-                    "usr/bin/dpkg", "usr/bin/apt-get", "usr/lib/os-release"):
-            os.makedirs(os.path.dirname(root._path(rel)), exist_ok=True)
-            with open(root._path(rel), "w") as handle:
-                handle.write("# x\n")
-        with open(root._path("etc/os-release"), "w", encoding="utf-8") as handle:
-            handle.write('NAME="Buster OS"\nID=busteros\nID_LIKE=debian\n')
+                    "usr/lib/os-release"):
+            root._write_metadata(rel, "# x\n", 0o644)
+        root.write_binary("usr/bin/dpkg", b"# fake dpkg\n", 0o755)
+        root.write_binary("usr/bin/apt-get", b"# fake apt\n", 0o755)
+        root._write_metadata("etc/os-release",
+                             'NAME="Buster OS"\nID=busteros\nID_LIKE=debian\n')
         os.makedirs(root._path("opt/buster/lib/buster"), exist_ok=True)
-        with open(root._path("opt/buster/lib/buster/version.py"), "w") as handle:
-            handle.write("__version__='0.3.1'\n")
+        root._record("opt/buster/lib/buster", "dir", 0o755)
+        root._write_metadata("opt/buster/lib/buster/version.py",
+                             "__version__='0.3.2'\n")
         for rel in ("home/buster", "var/lib/buster", "run/buster", "tmp",
                     "dev", "proc", "sys", "root", "bin", "sbin", "lib"):
             os.makedirs(root._path(rel), exist_ok=True)
+            root._record(rel, "dir", 0o700 if rel == "root" else 0o755)
 
-        checks = build_rootfs.verify_rootfs(root, meta, artifact_path=None)
+        artifact_path = os.path.join(work, "synthetic-arm64.tar.gz")
+        import tarfile as _tf
+        with _tf.open(artifact_path, "w:gz") as tar:
+            root.pack_tree(tar)
+
+        checks = build_rootfs.verify_rootfs(root, meta, artifact_path)
         failed = [name for name, c in checks.items() if not c["ok"]]
         self.assertFalse(failed, failed)
 
@@ -186,7 +193,7 @@ class LoaderDetectionTests(unittest.TestCase):
     def test_loader_names_in_artifact(self):
         import build_rootfs
         import glob
-        samples = glob.glob("dist/buster-os-0.3.1-*-bookworm.tar.gz")
+        samples = glob.glob("dist/buster-os-0.3.2-*-bookworm.tar.gz")
         if not samples:
             self.skipTest("no release artifacts built")
         target = [s for s in samples if "arm64" in s] or samples

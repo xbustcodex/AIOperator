@@ -137,8 +137,7 @@ def build_arch(arch_token: str, *, distro: str, mirror: str,
     if os.path.isfile(artifact_path):
         os.remove(artifact_path)
     with tarfile.open(artifact_path, "w:gz") as tar:
-        tar.add(rootfs_dir, arcname=".")
-        root.pack_extra_members(tar)
+        root.pack_tree(tar)
 
     checks = verify_rootfs(root, meta, artifact_path)
     passed = sum(1 for v in checks.values() if v.get("ok"))
@@ -245,7 +244,96 @@ def verify_rootfs(root: Rootfs, meta, artifact_path: str) -> dict:
     check("buster:installed", os.path.isfile(
         root._path("opt/buster/lib/buster/version.py")))
     check("tooling:dpkg", os.path.isfile(root._path("usr/bin/dpkg")))
+    checks.update(verify_tar_metadata(artifact_path, meta))
     return checks
+
+
+def read_tar_member_index(tar_path: str) -> dict:
+    """name -> (type_char, mode) for every member of a release tarball."""
+    index = {}
+    if not tar_path:
+        return index
+    with tarfile.open(tar_path, "r:gz") as tar:
+        for member in tar.getmembers():
+            clean = member.name.rstrip("/")
+            if clean:
+                index[clean] = (member.type, member.mode)
+    return index
+
+
+def verify_tar_metadata(tar_path: str, meta) -> dict:
+    """Verify Unix metadata as actually recorded in the release tarball."""
+    out: dict[str, dict] = {}
+    if not tar_path:
+        return out  # no artifact provided; metadata checks are skipped
+    index = read_tar_member_index(tar_path)
+
+    def entry(name: str):
+        return index.get(name) or index.get("./" + name)
+
+    def is_exec(mode: int) -> bool:
+        return bool(mode & 0o111)
+
+    # representative executables must be executable in the archive
+    execs = []
+    for probe in ("usr/bin/bash", "usr/bin/ls", "bin/bash", "bin/ls",
+                  "usr/bin/python3", "usr/bin/dpkg", "usr/bin/apt-get",
+                  "usr/bin/git", "usr/bin/curl"):
+        found = entry(probe)
+        if found:
+            execs.append((probe, found[1]))
+    ok_exec = all(is_exec(m) for _, m in execs)
+    out["tar:executables"] = {
+        "ok": ok_exec,
+        "detail": ", ".join(f"{n}({oct(m & 0o777)})" for n, m in execs),
+    }
+
+    loader_found = None
+    for name, (typ, mode) in index.items():
+        if name.endswith(meta.loaders[0]):
+            loader_found = (name, mode)
+            break
+    if loader_found:
+        out["tar:loader-exec"] = {"ok": is_exec(loader_found[1]),
+                                  "detail": f"{loader_found[0]} {oct(loader_found[1] & 0o777)}"}
+    else:
+        out["tar:loader-exec"] = {"ok": False, "detail": "loader not found in archive"}
+
+    # representative non-executable configuration/data files
+    # (symlinks legitimately carry 0777; only regular files are judged)
+    data_files = []
+    for probe in ("etc/passwd", "etc/os-release", "usr/lib/os-release",
+                  "etc/apt/sources.list"):
+        found = entry(probe)
+        if found and found[0] == tarfile.REGTYPE:
+            data_files.append((probe, found[1]))
+    ok_data = all(not is_exec(m) for _, m in data_files)
+    out["tar:non-executables"] = {
+        "ok": ok_data,
+        "detail": ", ".join(f"{n}={oct(m & 0o777)}" for n, m in data_files),
+    }
+
+    # directories must be archive dirs, searchable by the owner
+    dir_ok = True
+    dir_details = []
+    for probe in ("usr/bin", "etc", "usr", "tmp", "root", "var/lib/buster"):
+        found = entry(probe)
+        if found:
+            typ, mode = found
+            dir_ok = dir_ok and typ == tarfile.DIRTYPE and bool(mode & 0o100)
+            dir_details.append(f"{probe}({oct(mode & 0o777)})")
+    out["tar:directories"] = {"ok": dir_ok, "detail": ", ".join(dir_details)}
+
+    # merged-/usr aliases must be archived as symlinks
+    sym_ok = True
+    for alias, target in (("bin", "usr/bin"), ("sbin", "usr/sbin"),
+                          ("lib", "usr/lib")):
+        found = entry(alias)
+        if found:
+            sym_ok = sym_ok and found[0] == tarfile.SYMTYPE
+    out["tar:merged-usr-symlinks"] = {"ok": sym_ok,
+                                      "detail": "bin/sbin/lib -> usr/..."}
+    return out
 
 
 def read_text(root: Rootfs, rel: str) -> str:
