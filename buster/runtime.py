@@ -33,6 +33,8 @@ import time
 import uuid
 from typing import Optional
 
+from buster.version import get_version
+
 LOCK_NAME = "runtime.lock"
 HEARTBEAT_NAME = "runtime.status.json"
 RPC_DIR = "rpc"
@@ -317,6 +319,24 @@ class RuntimeServer:
                     message.get("goal", ""),
                     tentative=bool(message.get("tentative", False)))
                 return {"op": op, "ok": True, "data": _serialize(result)}
+            if op == "activity":
+                return {"op": op, "ok": True,
+                        "data": _serialize(self._rpc_activity())}
+            if op == "permissions_list":
+                return {"op": op, "ok": True, "data": _serialize({
+                    "rules": self.kernel.permissions.to_rules(),
+                    "elevation_sensitive": sorted(
+                        getattr(self.kernel.security.elevation, "_sensitive", set())),
+                })}
+            if op == "update_info":
+                return {"op": op, "ok": True, "data": _serialize({
+                    "buster_version": get_version(),
+                    "runtime_state": self.kernel.state,
+                    "install_path": self.install_path,
+                    "updater_available": False,
+                    "updater_note": "update installs are handled by the "
+                                    "bootstrap/update machinery, not the UI",
+                })}
             if op == "plan":
                 from buster.agents.orchestration import AgentOrchestrator
                 run = AgentOrchestrator(kernel=self.kernel).run(
@@ -357,6 +377,34 @@ class RuntimeServer:
             return {"op": "goal", "ok": True, "data": _serialize(result)}
         goals_list = [g.as_dict() for g in goals.list_goals()]
         return {"op": "goal", "ok": True, "data": _serialize(goals_list)}
+
+    def _rpc_activity(self) -> dict:
+        """Consumer-facing recent activity aggregated from real runtime state."""
+        world = self.kernel.world_model
+        memory = self.kernel.memory
+        try:
+            events = [{"ts": e.get("ts"), "type": e.get("type"),
+                       "detail": e.get("detail", {})}
+                      for e in world.recent_events(limit=30)]
+        except Exception:  # noqa: BLE001
+            events = []
+        experiences = []
+        try:
+            for entry in memory.experience.recall(limit=12):
+                experiences.append({"ts": entry.get("ts"),
+                                    "target": entry.get("target", ""),
+                                    "status": entry.get("status", ""),
+                                    "kind": "experience"})
+        except Exception:  # noqa: BLE001
+            experiences = []
+        goals = [g.as_dict() for g in self.kernel.intel.goals.list_goals()]
+        suggestions = self.kernel.intel.proactive.suggestions(limit=8)
+        return {
+            "events": events,
+            "experiences": experiences,
+            "goals": goals,
+            "suggestions": suggestions,
+        }
 
     def _heartbeat(self) -> None:
         snapshot = self.kernel.status()
@@ -472,6 +520,15 @@ class RemoteKernel:
 
     def consolidate_now(self) -> dict:
         return self.rpc("consolidate")["data"]
+
+    def activity(self) -> dict:
+        return self.rpc("activity")["data"]
+
+    def permissions_list(self) -> dict:
+        return self.rpc("permissions_list")["data"]
+
+    def update_info(self) -> dict:
+        return self.rpc("update_info")["data"]
 
 
 class RemoteCapability:

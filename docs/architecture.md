@@ -65,6 +65,10 @@ buster/
 │   │   ├── results.py      # StructuredResult rendering
 │   │   └── session.py      # REPL + kernel dispatch + job control
 │   ├── runtime.py          # Single-runtime lock, daemon server, RPC client
+│   ├── gui/                # Consumer UI (client of the daemon; no Kernel)
+│   │   ├── server.py       # Local HTTP/JSON GUI-RPC server
+│   │   ├── __main__.py     # `python -m buster.gui.server`
+│   │   └── web/            # Frontend: dark/purple design, orb, screens
 │   ├── osbuild/            # Linux distribution/rootfs build system
 │   │   ├── packages.py     # Debian Packages index parser
 │   │   ├── deb.py          # .deb (ar/tar) reader/extractor

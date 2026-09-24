@@ -120,6 +120,33 @@ python bootstrap.py --check          # bootstrap + doctor health checks
 python -m buster.cli bootstrap       # same via the CLI
 ```
 
+## GUI
+
+A local consumer web UI ships with Buster. It is a pure client of the Buster
+daemon (RemoteKernel/RPC) — the GUI process never constructs a Kernel or a
+second runtime authority; the daemon keeps running independently of the UI.
+
+```sh
+python -m buster.gui.server --install-path /var/lib/buster    # serve on :8468
+# open http://127.0.0.1:8468
+```
+
+- **Purple orb**: the centrepiece, with real idle/listening/thinking/working/
+  speaking/attention/offline/error states and reduced-motion support.
+- **Home** answers "is Buster available, what is it doing, anything waiting,
+  recent activity, what can I ask".
+- **Talk** is a real conversation against the runtime (history lives in
+  Buster's memory store). **Live** is the voice experience around a hero orb
+  with a portable audio-backend interface.
+- Everyday areas: Files (through the capability/permission gate), Tasks &
+  Projects, Memory & Preferences, Permissions, Device, Activity, Settings,
+  Updates; plus a separate **Advanced** technical area.
+- Onboarding, offline/local handling, and consumer-first language throughout.
+
+Frontend logic tests run with Node (`node --test`, no runtime needed);
+Python integration tests (`buster/tests/test_gui*.py`) drive a real runtime
+over HTTP.
+
 ## Runtime lifecycle
 
 `start` brings the single runtime online and `stop` takes it down. A PID +

@@ -451,6 +451,21 @@ class Rootfs:
                          "#!/bin/sh\nexec /usr/bin/python3 -m buster.cli \"$@\"\n", 0o755)
         self._write_text("usr/bin/busterctl",
                          "#!/bin/sh\nexport BUSTER_INSTALL=/var/lib/buster\nexec /usr/bin/python3 -m buster.system.busterctl \"$@\"\n", 0o755)
+        self._write_text("usr/bin/buster-gui",
+                         "#!/bin/sh\nexport BUSTER_INSTALL=/var/lib/buster\nexec /usr/bin/python3 -m buster.gui.server --install-path /var/lib/buster --port 8468\n", 0o755)
+
+        # GUI web assets as a distributable frontend artifact.
+        gui_web_src = os.path.join(source_dir, "buster", "gui", "web")
+        gui_web_dst = self._path("usr/share/buster-gui")
+        if os.path.isdir(gui_web_src):
+            shutil.copytree(gui_web_src, gui_web_dst,
+                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            self._record("usr/share/buster-gui", "dir", 0o755)
+            for dirpath, dirnames, filenames in os.walk(gui_web_dst):
+                for d in dirnames:
+                    self._record(self._rel_of(os.path.join(dirpath, d)), "dir", 0o755)
+                for name in filenames:
+                    self._record(self._rel_of(os.path.join(dirpath, name)), "file", 0o644)
 
         self._write_text("etc/profile.d/buster.sh", identity.buster_profile_sh())
         self._write_text("etc/logrotate.d/buster",

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Buster</title>
+  <link rel="icon" href="/assets/orb-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="app-header" id="app-header">
+      <span class="app-orb" id="app-orb" aria-hidden="true"></span>
+      <nav class="nav-track" id="nav-track" aria-label="Buster areas"></nav>
+      <div class="app-status" id="app-status" role="status" aria-live="polite"></div>
+    </header>
+    <main class="app-main" id="app-main" tabindex="-1"></main>
+    <div class="offline-notch" id="offline-notch" hidden>
+      Buster is in local mode. Most things on this device still work.
+    </div>
+    <div class="error-toast" id="error-toast" role="alert" hidden></div>
+  </div>
+  <script type="module" src="/assets/js/app.js"></script>
+</body>
+</html>

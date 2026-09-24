@@ -5,6 +5,49 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-24
+
+### Added — first consumer-facing Buster UI
+
+- **Local web frontend with a server-side JSON API** (`buster/gui/`): the GUI
+  is a pure client of the Buster daemon over the existing RemoteKernel/RPC
+  boundary. The GUI process never constructs or imports a Kernel,
+  EventRouter, Scheduler, memory authority or agent system (verified by
+  tests); the daemon keeps running independently of the UI.
+- **Design system**: near-black/purple premium visual language, mobile-first
+  responsive layout that scales to desktop, reduced-motion support,
+  touch-friendly targets, focus rings, and screen-reader labels.
+- **Purple orb as the centrepiece** (reusable `orb.js` state model + CSS
+  renderer): idle, listening, thinking, working, speaking, needs attention,
+  offline/local and error states, with deliberate motion and
+  `prefers-reduced-motion` handling. Header-orb = small persistent; Home =
+  large dominant; Live = hero size.
+- **Home**: answers "is Buster available / what is it doing / anything
+  waiting / recent activity / what can I ask" with real runtime state.
+- **Conversation (Talk)**: real round-trips through the daemon
+  (`/api/chat` → `process_goal`), history stored in Buster's memory store
+  (no second conversation authority), error/offline handling.
+- **Live/voice**: hero orb bound to interaction state; portable
+  `AudioBackend` interface with a browser implementation, graceful fallback
+  to text when the platform provides none.
+- **Everyday areas**: Files (through the capability/permission gate),
+  Tasks & Projects (goals in plain language), Memory & Preferences,
+  Permissions & approvals, Device, Activity, Settings, Updates, plus a
+  separate **Advanced** technical area (health, providers, goals, world
+  model, memory, capabilities, jobs, audit via `intel` views).
+- **Onboarding**: first-run flow that sets consumer preferences, confirms
+  runtime availability and leads to Home without touching Linux internals.
+- **Offline/local operation**: the UI stays useful locally and distinguishes
+  "offline/local" from errors; external-provider loss never reads as loss of
+  Buster itself.
+- **Frontend RPC ops** added to the existing runtime authority (`activity`,
+  `permissions_list`, `update_info`) plus `buster-gui` launcher and web
+  assets shipped in the rootfs (`/usr/share/buster-gui`).
+- **Tests**: Node-based frontend logic tests (orb transitions, nav, state)
+  and Python GUI integration tests that drive a real runtime over HTTP and
+  assert real state (plus no-Kernel-in-GUI verification). Full suite: 190
+  tests passing.
+
 ## [0.3.2] - 2026-09-22
 
 ### Fixed — release-blocking rootfs permissions defect

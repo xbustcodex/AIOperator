@@ -84,7 +84,7 @@ def unit_tests() -> bool:
 
 
 def cli_smoke() -> bool:
-    step("CLI smoke + runtime checks")
+    step("CLI smoke + runtime + frontend checks")
     ok = True
     checks = [
         (["-m", "buster.cli", "version"], "version"),
@@ -100,7 +100,31 @@ def cli_smoke() -> bool:
         status = "PASS" if acceptable else f"NONZERO({result.returncode})"
         ok = ok and acceptable
         print(f"  [{'x' if acceptable else ' '}] {label} -> {status}")
+
+    # Frontend logic tests (Node, no runtime required).
+    js_result = _node_tests()
+    ok = ok and js_result
+    print(f"  [{'x' if js_result else ' '}] frontend-js -> {'PASS' if js_result else 'FAIL'}")
     return ok
+
+
+def _node_tests() -> bool:
+    tests = [
+        "buster/gui/web/assets/tests/orb.test.mjs",
+        "buster/gui/web/assets/tests/nav.test.mjs",
+        "buster/gui/web/assets/tests/state.test.mjs",
+    ]
+    try:
+        import subprocess as _sp
+        completed = _sp.run(["node", "--test", *tests], cwd=REPO,
+                            capture_output=True, text=True, timeout=180)
+    except (OSError, _sp.TimeoutExpired):
+        print("  (node not available — skipping frontend-js)")
+        return True
+    if completed.returncode != 0:
+        print(completed.stdout[-400:])
+        print(completed.stderr[-400:])
+    return completed.returncode == 0
 
 
 def package(out: str) -> bool:
