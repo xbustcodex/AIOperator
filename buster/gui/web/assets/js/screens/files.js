@@ -45,8 +45,19 @@ export async function render(root, ctx) {
       }
       if (names.length === 0) grid.appendChild(el("p", "muted", "Nothing here yet."));
       root.appendChild(grid);
-    } else if (data && data.error) {
-      root.appendChild(el("p", "muted", data.error));
+} else if (data && data.error) {
+      const err = String(data.error || "");
+      if (/permission|denied|not allowed/i.test(err)) {
+        root.appendChild(el("p", "muted",
+          "Buster needs permission to look inside this folder."));
+        const row = el("div", "row gap-sm");
+        const btn = el("button", "action soft", "Check permissions");
+        btn.addEventListener("click", () => go("permissions"));
+        row.appendChild(btn);
+        root.appendChild(row);
+      } else {
+        root.appendChild(el("p", "muted", data.error));
+      }
     } else if (data && data.offline) {
       root.appendChild(el("p", "muted", "My Files needs the Buster runtime. Reconnecting…"));
     }

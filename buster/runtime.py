@@ -166,7 +166,7 @@ class RuntimeLock:
 class RuntimeServer:
     """Daemon-side processor owning exactly one kernel."""
 
-    POLL_INTERVAL = 0.1
+    POLL_INTERVAL = 0.02
 
     def __init__(self, kernel, install_path: str):
         self.kernel = kernel

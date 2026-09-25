@@ -1,6 +1,7 @@
 """Buster OS GUI server command-line entry point.
 
-    python -m buster.gui.server --install-path /var/lib/buster [--port 8468]
+    python -m buster.gui --install-path /var/lib/buster [--port 8468]
+    python -m buster.gui.server --install-path /var/lib/buster   (equivalent)
 
 The GUI is a pure client of the running Buster daemon.
 """

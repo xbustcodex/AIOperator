@@ -1,0 +1,34 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Main agent stays Big Pickle (OpenCode Zen). Change to your own if different.
+  "model": "opencode/big-pickle",
+
+  // Option A — vision subagent:
+  // A separate vision-capable model that Big Pickle (the main agent) can
+  // invoke via the Task tool, or you can call directly with @vision.
+  // Replace the model with a vision-capable ID available in `opencode models`.
+  "agent": {
+    "vision": {
+      "description": "Analyzes images and browser screenshots with a vision-capable model.",
+      "mode": "subagent",
+      "model": "opencode/gemini-3-pro",
+      // Read-only by default: can look at the repo and files, cannot edit.
+      "permission": {
+        "read": "allow",
+        "edit": "deny",
+        "bash": "ask"
+      }
+    }
+  },
+
+  // Playwright MCP: browser navigation + screenshots. The vision subagent
+  // (or a custom tool) can then analyze a captured screenshot.
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp", "--browser", "chromium", "--executable-path", "C:/Users/xkali/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe"],
+      "enabled": true
+    }
+  }
+}

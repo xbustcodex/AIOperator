@@ -27,3 +27,10 @@ memory/history.json
 
 .vscode/
 .idea/
+
+# local runtime + config
+state/
+config/config.json
+
+# visual review byproducts (screenshots/reports are regenerated)
+artifacts/ui-review/

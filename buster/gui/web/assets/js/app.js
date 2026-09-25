@@ -25,31 +25,51 @@ function go(screen, param) {
 }
 
 async function boot() {
-  let boot = { online: false };
-  try {
-    boot = await api.get("/api/bootstrap");
-  } catch (_) {
-    boot = { online: false };
-  }
-  store.set("boot", boot);
-  store.set("runtime", {
-    online: !!boot.online && boot.runtime_state === "running",
-    state: boot.runtime_state,
-  });
-  renderNav(boot);
+  // 1. Paint the shell first so the user always sees Buster, then hydrate.
+  renderNav({});
   await renderHeaderOrb();
+  els.status().textContent = "Starting…";
+  showLoading("Waking Buster…");
+  setOrb("thinking");
 
+  let payload = { online: false };
+  try {
+    payload = await api.get("/api/bootstrap");
+  } catch (_) {
+    payload = { online: false };
+  }
+  store.set("boot", payload);
+  store.set("runtime", {
+    online: !!payload.online && payload.runtime_state === "running",
+    state: payload.runtime_state,
+  });
+  renderNav(payload);
+  setOrb(orbStateFor(store.get("runtime")));
+
+  // 2. Onboarding state, best-effort (must never block the first paint).
   let onboarded = false;
   try {
     const mem = await api.get("/api/memory");
-    onboarded = !!((mem && mem.preferences && mem.preferences.onboarded) === "1"
-      || (mem && mem.preferences && mem.preferences.onboarded) === true);
+    onboarded = mem && mem.preferences && (mem.preferences.onboarded === "1"
+      || mem.preferences.onboarded === true);
   } catch (_) {
     onboarded = false;
   }
   store.set("onboarded", onboarded);
-  setOrb(orbStateFor(store.get("runtime")));
   route();
+}
+
+function showLoading(text) {
+  const main = els.main();
+  main.innerHTML = "";
+  const note = document.createElement("div");
+  note.className = "state-note";
+  const spinner = document.createElement("div");
+  spinner.className = "spinner";
+  const label = document.createElement("p");
+  label.textContent = text;
+  note.append(spinner, label);
+  main.appendChild(note);
 }
 
 function renderNav(boot) {
@@ -103,6 +123,11 @@ async function route() {
   }
   setOrb(orbStateFor(store.get("runtime")));
 
+  const runtime = store.get("runtime") || {};
+  els.status().textContent = runtime.online
+    ? "Buster is available"
+    : (runtime.state === "starting" ? "Starting…" : "Buster is in local mode");
+
   const ctx = { api, store, orb, go, routeParam: store.get("routeParam") };
   els.main().innerHTML = "";
   try {
@@ -128,3 +153,5 @@ window.addEventListener("offline", () => {
 });
 
 export { store, orb, go, route, boot };
+
+boot();

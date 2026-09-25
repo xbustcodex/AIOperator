@@ -1,18 +1,18 @@
 /* Buster GUI — screens index / router. */
 
-import { render as home } from "./screens/home.js";
-import { render as chat } from "./screens/chat.js";
-import { render as live } from "./screens/live.js";
-import { render as files } from "./screens/files.js";
-import { render as tasks } from "./screens/tasks.js";
-import { render as memory } from "./screens/memory.js";
-import { render as permissions } from "./screens/permissions.js";
-import { render as device } from "./screens/device.js";
-import { render as activity } from "./screens/activity.js";
-import { render as settings } from "./screens/settings.js";
-import { render as advanced } from "./screens/advanced.js";
-import { render as updates } from "./screens/updates.js";
-import { render as onboarding } from "./screens/onboarding.js";
+import { render as home } from "./home.js";
+import { render as chat } from "./chat.js";
+import { render as live } from "./live.js";
+import { render as files } from "./files.js";
+import { render as tasks } from "./tasks.js";
+import { render as memory } from "./memory.js";
+import { render as permissions } from "./permissions.js";
+import { render as device } from "./device.js";
+import { render as activity } from "./activity.js";
+import { render as settings } from "./settings.js";
+import { render as advanced } from "./advanced.js";
+import { render as updates } from "./updates.js";
+import { render as onboarding } from "./onboarding.js";
 
 export const SCREENS = {
   home, chat, live, files, tasks, memory, permissions,

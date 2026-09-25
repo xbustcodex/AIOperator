@@ -20,7 +20,11 @@ export async function render(root, ctx) {
   const orbHost = el("div", null);
   const orbNodes = renderOrb(orbHost, orb, { size: "hero" });
   hero.appendChild(orbHost);
-  const statusLine = el("h2", null, orb.label());
+
+  const title = el("h1", "live-title", "Buster Live");
+  hero.appendChild(title);
+
+  const statusLine = el("h2", "live-status", orb.label());
   hero.appendChild(statusLine);
   const sub = el("p", "muted", summary.online ? "Talk to me — I'm listening." : "I'm here in local mode.");
   hero.appendChild(sub);
@@ -34,11 +38,15 @@ export async function render(root, ctx) {
   root.appendChild(hero);
 
   const transcript = el("div", "card chat-list");
+  const emptyHint = el("p", "empty-hint",
+    "Your conversation with Buster will appear here.");
+  transcript.appendChild(emptyHint);
   root.appendChild(transcript);
 
   const backend = await bestBackend();
 
   const append = (role, text) => {
+    emptyHint.remove();
     const bubble = el("div", "chat-bubble " + role);
     bubble.textContent = text;
     transcript.appendChild(bubble);

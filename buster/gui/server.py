@@ -375,3 +375,9 @@ def run_gui(install_path: str, host: str = "127.0.0.1",
     server = GuiServer(install_path, host=host, port=port)
     server.serve_forever()
     return server
+
+
+if __name__ == "__main__":
+    # Allow both `python -m buster.gui` and `python -m buster.gui.server`.
+    from buster.gui.__main__ import main as _cli_main
+    sys.exit(_cli_main())
