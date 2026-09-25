@@ -23,6 +23,7 @@ import stat
 import tarfile
 from typing import Iterable, Optional
 
+from buster.install import SYSTEM_INSTALL
 from buster.osbuild import identity
 from buster.version import get_version
 
@@ -286,15 +287,21 @@ class Rootfs:
                 self._write_metadata(rel, "", 0o644)
 
         status_path = self._path("var/lib/dpkg/status")
-        with open(status_path, "w", encoding="utf-8") as handle:
-            for record in selected:
-                content = contents.get(record.package)
-                if content is None:
-                    continue
-                control = content.control or {}
-                handle.write(self._status_stanza(record, control))
-                self._write_info(record.package, content, control)
+        status_bytes = b"".join(
+            self._status_stanza(record, contents[record.package].control or {})
+            .encode("utf-8")
+            for record in selected
+            if contents.get(record.package) is not None)
+        with open(status_path, "wb") as handle:
+            handle.write(status_bytes)
+        self._write_info_batch(selected, contents)
         self._record("var/lib/dpkg/status", "file", 0o644)
+
+    def _write_info_batch(self, selected, contents: dict) -> None:
+        for record in selected:
+            content = contents.get(record.package)
+            if content is not None:
+                self._write_info(record.package, content, content.control or {})
 
     @staticmethod
     def _status_stanza(record, control: dict) -> str:
@@ -323,13 +330,14 @@ class Rootfs:
     def _write_info(self, pkg: str, content, control: dict) -> None:
         info = self._path(f"var/lib/dpkg/info/{pkg}")
         list_path = info + ".list"
-        with open(list_path, "w", encoding="utf-8") as handle:
-            for path in content.payload_files:
-                handle.write("/" + path.lstrip("/") + "\n")
+        payload = "".join("/" + path.lstrip("/") + "\n"
+                          for path in content.payload_files)
+        with open(list_path, "wb") as handle:
+            handle.write(payload.encode("utf-8"))
         self._record(f"var/lib/dpkg/info/{pkg}.list", "file", 0o644)
         if content.conffiles:
-            with open(info + ".conffiles", "w", encoding="utf-8") as handle:
-                handle.write("\n".join(conf for conf in content.conffiles) + "\n")
+            with open(info + ".conffiles", "wb") as handle:
+                handle.write(("\n".join(conf for conf in content.conffiles) + "\n").encode("utf-8"))
             self._record(f"var/lib/dpkg/info/{pkg}.conffiles", "file", 0o644)
 
     # -- base system files ---------------------------------------------
@@ -416,8 +424,16 @@ class Rootfs:
     # -- Buster system layer --------------------------------------------
 
     def install_buster(self, source_dir: str, version: str = None,
-                       install_path: str = "/var/lib/buster") -> None:
-        """Copy the Buster python runtime into the OS and wire system files."""
+                       install_path: str = SYSTEM_INSTALL) -> None:
+        """Copy the Buster python runtime into the OS and wire system files.
+
+        ``install_path`` is recorded in ``etc/buster/config.json`` and
+        ``etc/buster/buster.env``; the launchers under ``usr/bin`` deliberately
+        carry NO install path. Every client (bootstrap, daemon, CLI, GUI,
+        busterctl, shell, doctor) resolves the one canonical install/state
+        path at runtime through ``buster.install``, so no second hard-coded
+        authority can diverge from the deployed runtime state.
+        """
         version = version or get_version()
         lib_dir = self._path("opt/buster/lib")
         os.makedirs(lib_dir, exist_ok=True)
@@ -426,6 +442,7 @@ class Rootfs:
         if os.path.isdir(src):
             shutil.copytree(src, os.path.join(lib_dir, "buster"),
                             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            self._normalize_tree_text(os.path.join(lib_dir, "buster"))
             self._record_tree("opt/buster/lib/buster")
 
         dist_packages = self._find_dist_packages()
@@ -450,9 +467,9 @@ class Rootfs:
         self._write_text("usr/bin/buster",
                          "#!/bin/sh\nexec /usr/bin/python3 -m buster.cli \"$@\"\n", 0o755)
         self._write_text("usr/bin/busterctl",
-                         "#!/bin/sh\nexport BUSTER_INSTALL=/var/lib/buster\nexec /usr/bin/python3 -m buster.system.busterctl \"$@\"\n", 0o755)
+                         "#!/bin/sh\nexec /usr/bin/python3 -m buster.system.busterctl \"$@\"\n", 0o755)
         self._write_text("usr/bin/buster-gui",
-                         "#!/bin/sh\nexport BUSTER_INSTALL=/var/lib/buster\nexec /usr/bin/python3 -m buster.gui.server --install-path /var/lib/buster --port 8468\n", 0o755)
+                         "#!/bin/sh\nexec /usr/bin/python3 -m buster.gui.server --port 8468\n", 0o755)
 
         # GUI web assets as a distributable frontend artifact.
         gui_web_src = os.path.join(source_dir, "buster", "gui", "web")
@@ -470,6 +487,22 @@ class Rootfs:
         self._write_text("etc/profile.d/buster.sh", identity.buster_profile_sh())
         self._write_text("etc/logrotate.d/buster",
                          "/var/log/buster/*.log {\n    weekly\n    rotate 4\n    compress\n    missingok\n    notifempty\n}\n")
+
+    def _normalize_tree_text(self, base: str) -> None:
+        text_suffixes = {".py", ".json", ".js", ".css", ".html", ".sh"}
+        for dirpath, _dirnames, filenames in os.walk(base):
+            for name in filenames:
+                if os.path.splitext(name)[1].lower() not in text_suffixes:
+                    continue
+                path = os.path.join(dirpath, name)
+                try:
+                    with open(path, "rb") as handle:
+                        data = handle.read()
+                    normalized = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+                    with open(path, "wb") as handle:
+                        handle.write(normalized)
+                except OSError:
+                    pass
 
     def _find_dist_packages(self) -> str:
         return self._path("usr/lib/python3/dist-packages")
@@ -510,8 +543,9 @@ class Rootfs:
         version = version or get_version()
         usr_lib = self._path("usr/lib/os-release")
         os.makedirs(os.path.dirname(usr_lib), exist_ok=True)
-        with open(usr_lib, "w", encoding="utf-8") as handle:
-            handle.write(identity.os_release(version))
+        bytes_ = identity.os_release(version).encode("utf-8")
+        with open(usr_lib, "wb") as handle:
+            handle.write(bytes_)
         self._record("usr/lib/os-release", "file", 0o644)
         osrc = self._path("etc/os-release")
         if os.path.lexists(osrc):
@@ -523,17 +557,26 @@ class Rootfs:
             os.symlink("../usr/lib/os-release", osrc)
             self._record("etc/os-release", "symlink", 0o777, "../usr/lib/os-release")
         except OSError:
-            shutil.copyfile(usr_lib, osrc)
+            with open(osrc, "wb") as handle:
+                handle.write(bytes_)
             self._record("etc/os-release", "file", 0o644)
         self._write_metadata("etc/issue", identity.issue(version), 0o644)
 
     # -- shared writers (record authoritative modes) --------------------
 
     def _write_metadata(self, rel: str, text: str, mode: int = 0o644) -> None:
+        """Write Buster-generated text into the rootfs with byte fidelity.
+
+        Emits the exact UTF-8 bytes given (always LF-only on every build
+        host). Windows text mode would otherwise rewrite ``\\n`` as ``\\r\\n``
+        and corrupt ``/usr/bin/buster``, ``buster-gui``, ``busterctl`` and the
+        identity files in the Linux release artifact — exactly the CRLF defect
+        found on the first real ARM64 device.
+        """
         target = self._path(rel)
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        with open(target, "w", encoding="utf-8") as handle:
-            handle.write(text)
+        with open(target, "wb") as handle:
+            handle.write(text.encode("utf-8"))
         self._chmod(rel, mode)
         self._record(rel, "file", mode)
 

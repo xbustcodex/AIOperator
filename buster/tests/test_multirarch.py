@@ -17,6 +17,7 @@ from buster.osbuild.architectures import (
 )
 from buster.osbuild import packages, resolver
 from buster.osbuild.rootfs import Rootfs
+from buster.version import get_version
 
 
 def make_elf(e_class: int, e_machine: int, endian: str = "little") -> bytes:
@@ -130,6 +131,18 @@ class ArchAwareVerifyTests(unittest.TestCase):
         root._record("usr/bin", "dir", 0o755)
         root.write_binary("usr/bin/bash", make_elf(2, 183), mode=0o755)
         root.write_binary("usr/bin/ls", b"# fake\n", mode=0o755)
+        root.write_binary("usr/bin/buster", b"#!/bin/sh\nexec python3 -m buster.cli\n", mode=0o755)
+        root.write_binary("usr/bin/busterctl", b"#!/bin/sh\nexec python3 -m buster.system.busterctl\n", mode=0o755)
+        root.write_binary("usr/bin/buster-gui", b"#!/bin/sh\nexec python3 -m buster.gui.server\n", mode=0o755)
+        root.write_binary("etc/buster/config.json",
+                          b'{"install_path": "/var/lib/buster"}\n', mode=0o644)
+        for rel in ("opt/buster/lib/buster/cli/__main__.py",
+                    "opt/buster/lib/buster/gui/__main__.py",
+                    "opt/buster/lib/buster/gui/server.py",
+                    "opt/buster/lib/buster/system/busterctl.py"):
+            os.makedirs(root._path(os.path.dirname(rel)), exist_ok=True)
+            root._record(os.path.dirname(rel), "dir", 0o755)
+            root.write_binary(rel, b"import sys\n", mode=0o644)
 
         os.makedirs(root._path("var/lib/dpkg"), exist_ok=True)
         with open(root._path("var/lib/dpkg/status"), "w") as handle:
@@ -153,7 +166,7 @@ class ArchAwareVerifyTests(unittest.TestCase):
         os.makedirs(root._path("opt/buster/lib/buster"), exist_ok=True)
         root._record("opt/buster/lib/buster", "dir", 0o755)
         root._write_metadata("opt/buster/lib/buster/version.py",
-                             "__version__='0.3.2'\n")
+                              f"__version__='{get_version()}'\n")
         for rel in ("home/buster", "var/lib/buster", "run/buster", "tmp",
                     "dev", "proc", "sys", "root", "bin", "sbin", "lib"):
             os.makedirs(root._path(rel), exist_ok=True)
@@ -193,7 +206,7 @@ class LoaderDetectionTests(unittest.TestCase):
     def test_loader_names_in_artifact(self):
         import build_rootfs
         import glob
-        samples = glob.glob("dist/buster-os-0.3.2-*-bookworm.tar.gz")
+        samples = glob.glob(f"dist/buster-os-{get_version()}-*-bookworm.tar.gz")
         if not samples:
             self.skipTest("no release artifacts built")
         target = [s for s in samples if "arm64" in s] or samples

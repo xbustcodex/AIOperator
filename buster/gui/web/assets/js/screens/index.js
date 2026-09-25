@@ -13,10 +13,11 @@ import { render as settings } from "./settings.js";
 import { render as advanced } from "./advanced.js";
 import { render as updates } from "./updates.js";
 import { render as onboarding } from "./onboarding.js";
+import { render as terminal } from "./terminal.js";
 
 export const SCREENS = {
   home, chat, live, files, tasks, memory, permissions,
-  device, activity, settings, advanced, updates, onboarding,
+  device, activity, settings, advanced, updates, onboarding, terminal,
 };
 
 export async function renderScreen(id, root, ctx) {

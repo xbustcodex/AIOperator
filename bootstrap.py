@@ -15,6 +15,7 @@ import os
 import sys
 
 from buster.config import Config
+from buster.install import resolve_install_path
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,9 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list | None = None) -> int:
     args = build_parser().parse_args(sys.argv[1:] if argv is None else argv)
 
-    install = args.install_path or Config().get(
-        "install_path", os.path.expanduser("~/.buster/"))
-    config = Config(config_path=os.path.join(install, "config", "config.json"))
+    install = resolve_install_path(explicit=args.install_path)
+    config = Config(config_path=os.path.join(install, "config", "config.json"),
+                    install_path=install)
 
     from buster.bootstrap import bootstrap_offline
     summary = bootstrap_offline(config, install_path=install)

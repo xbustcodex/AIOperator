@@ -184,8 +184,8 @@ Produces `dist/buster-os-<version>.zip`.
 ## Usage
 
 ```sh
-python launcher.py                       # boot the kernel and exit
-python -m buster.cli start               # start kernel
+python launcher.py                       # bootstrap and connect to the daemon
+python -m buster.cli launch --no-open    # normal consumer launch
 python -m buster.cli status              # status snapshot
 python -m buster.cli doctor              # environment health checks
 python -m buster.cli shell               # interactive shell

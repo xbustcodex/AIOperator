@@ -15,7 +15,10 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
+
+from buster.version import get_version
 
 REPO = os.path.dirname(os.path.abspath(__file__))
 
@@ -25,7 +28,7 @@ def _read_version() -> str:
         with open(os.path.join(REPO, "VERSION"), "r", encoding="utf-8") as handle:
             return handle.read().strip()
     except OSError:
-        return "0.1.0"
+        return get_version()
 
 
 VERSION = _read_version()
@@ -90,16 +93,21 @@ def cli_smoke() -> bool:
         (["-m", "buster.cli", "version"], "version"),
         (["-m", "buster.cli", "help"], "help"),
         (["-m", "buster.cli", "doctor"], "doctor"),
-        (["launcher.py"], "launcher"),
         (["buster/tests/check_runtime.py"], "runtime"),
     ]
-    for command, label in checks:
-        result = run(command)
-        # doctor returns 1 on a healthy-but-non-phone host; count <=1 as PASS.
-        acceptable = result.returncode in (0, 1) if label == "doctor" else result.returncode == 0
+    with tempfile.TemporaryDirectory(prefix="buster-launch-smoke-") as install:
+        for command, label in checks:
+            result = run(command)
+            acceptable = result.returncode in (0, 1) if label == "doctor" else result.returncode == 0
+            status = "PASS" if acceptable else f"NONZERO({result.returncode})"
+            ok = ok and acceptable
+            print(f"  [{'x' if acceptable else ' '}] {label} -> {status}")
+        result = run(["launcher.py", "--install-path", install])
+        acceptable = result.returncode == 0
         status = "PASS" if acceptable else f"NONZERO({result.returncode})"
         ok = ok and acceptable
-        print(f"  [{'x' if acceptable else ' '}] {label} -> {status}")
+        print(f"  [{'x' if acceptable else ' '}] launcher -> {status}")
+        run(["-m", "buster.cli", "stop", "--install-path", install])
 
     # Frontend logic tests (Node, no runtime required).
     js_result = _node_tests()

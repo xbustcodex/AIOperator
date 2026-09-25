@@ -8,6 +8,7 @@ import unittest
 from buster.bootstrap import bootstrap_offline, seed_runtime
 from buster.config import Config
 from buster.kernel.core import Kernel
+from buster.version import get_version
 
 
 def _install() -> tuple:
@@ -60,7 +61,7 @@ class SeedRuntimeTests(unittest.TestCase):
         try:
             first = seed_runtime(kernel)
             self.assertTrue(first["seeded"])
-            self.assertEqual(kernel.memory.knowledge.recall("bootstrap.version"), "0.4.0")
+            self.assertEqual(kernel.memory.knowledge.recall("bootstrap.version"), get_version())
             self.assertGreaterEqual(kernel.memory.experience.count(), 1)
             second = seed_runtime(kernel)
             self.assertFalse(second["seeded"])

@@ -3,6 +3,7 @@
 import json
 import os
 
+from buster.install import SYSTEM_INSTALL, SYSTEM_LOG_DIR
 from buster.version import get_version
 
 
@@ -76,8 +77,8 @@ tmpfs           /tmp            tmpfs   defaults                0       0
 """
 
 
-def buster_config_json(install_path: str = "/var/lib/buster",
-                       log_dir: str = "/var/log/buster") -> str:
+def buster_config_json(install_path: str = SYSTEM_INSTALL,
+                       log_dir: str = SYSTEM_LOG_DIR) -> str:
     return json.dumps({
         "logging_level": "INFO",
         "ai_providers": {},
@@ -91,21 +92,20 @@ def buster_config_json(install_path: str = "/var/lib/buster",
 
 def buster_profile_sh() -> str:
     return """# Buster OS environment
-export BUSTER_INSTALL=${BUSTER_INSTALL:-/var/lib/buster}
 export PATH="$PATH:/opt/buster/bin"
 """
 
 
 def systemd_unit() -> str:
-    return """[Unit]
+    return f"""[Unit]
 Description=Buster OS runtime daemon
 After=network.target local-fs.target
 
 [Service]
 Type=simple
-Environment=BUSTER_INSTALL=/var/lib/buster
+EnvironmentFile=/etc/buster/buster.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 -m buster.cli daemon --install-path /var/lib/buster
+ExecStart=/usr/bin/python3 -m buster.cli daemon
 WorkingDirectory=/opt/buster/lib
 Restart=on-failure
 RestartSec=5
@@ -116,7 +116,7 @@ WantedBy=multi-user.target
 
 
 def sysvinit_script() -> str:
-    return """#!/bin/sh
+    return f"""#!/bin/sh
 # Buster OS runtime daemon (sysvinit compatibility)
 case "$1" in
   start)
@@ -127,16 +127,16 @@ case "$1" in
     fi
     start-stop-daemon --start --background --make-pidfile \\
       --pidfile /run/buster/busterd.pid --startas /usr/bin/buster \\
-      -- start --install-path /var/lib/buster
+      -- start
     ;;
   stop)
-    /usr/bin/buster stop --install-path /var/lib/buster || true
+    /usr/bin/buster stop || true
     ;;
   status)
-    /usr/bin/buster status --install-path /var/lib/buster
+    /usr/bin/buster status
     ;;
   *)
-    echo "Usage: /etc/init.d/buster {start|stop|status}"
+        echo "Usage: /etc/init.d/buster {{start|stop|status}}"
     exit 1
     ;;
 esac
@@ -165,6 +165,6 @@ def buster_daemon_python(install_path: str) -> str:
     from buster.config import Config
     from buster.runtime import run_daemon
     import os
-    config = Config(config_path="/etc/buster/config.json")
+    config = Config(config_path="/etc/buster/config.json", install_path={install_path!r})
     sys.exit(run_daemon({install_path!r}, config=config))
     """)

@@ -63,12 +63,11 @@ class SelfMaintenance:
 
     def _rpc_online(self) -> bool:
         from buster.runtime import RuntimeLock
-        install = self.kernel.config.get("install_path", os.path.expanduser("~/.buster/"))
+        install = self.kernel.config.install_path
         return RuntimeLock(install).is_online()
 
     def _audit_health(self) -> dict:
-        path = os.path.join(self.kernel.config.get(
-            "install_path", os.path.expanduser("~/.buster/")), "logs", "audit.jsonl")
+        path = os.path.join(self.kernel.config.install_path, "logs", "audit.jsonl")
         ok = os.path.isfile(path)
         size = os.path.getsize(path) if ok else 0
         return {"present": ok, "bytes": size, "ok": ok}

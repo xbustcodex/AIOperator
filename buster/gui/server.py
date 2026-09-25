@@ -9,6 +9,7 @@ or agent system. The daemon continues independently of this UI.
 import json
 import logging
 import os
+import sys
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -139,6 +140,36 @@ class GuiServer:
         else:
             self.httpd.server_close()
 
+    # -- terminal (Prime Tech Terminal surface) ----------------------------
+
+    def _api_term(self, handler, payload: dict):
+        """Run a command inside Buster OS through the single runtime.
+
+        The command is executed by the Buster daemon's shell capability, i.e.
+        in Buster's own userspace against its own filesystem/tooling and the
+        same runtime the GUI talks to. The GUI never spawns its own processes
+        or a second Kernel. Permission denials surface in consumer language.
+        """
+        command = str(payload.get("command") or "")
+        if not command or "\x00" in command:
+            return handler.send_json(200, {"ok": False, "error": "empty command"})
+        result = self.daemon.cap.call(
+            "shell.run",
+            extra={"command": command,
+                   "timeout": int(payload.get("timeout", 30))},
+            context={"actor": "gui", "source": "gui", "surface": "terminal"})
+        if not result.success:
+            error = str(result.error or "")
+            if "permission" in error.lower() or "denied" in error.lower():
+                return handler.send_json(200, {
+                    "ok": False, "permission": True,
+                    "error": "Buster needs permission to run terminal "
+                             "commands. Allow it once below."})
+            return handler.send_json(200, {"ok": False, "permission": False,
+                                           "error": error})
+        return handler.send_json(200, {"ok": True, "permission": False,
+                                       "data": result.data})
+
     # -- RPC guard -------------------------------------------------------
 
     def _rpc(self, fn, fallback=None):
@@ -164,8 +195,14 @@ class GuiServer:
 
     def _api_route(self, handler, method, path, query, payload):
         if path == "/api/ping":
+            # install_path is part of the contract: the consumer launcher uses
+            # it to confirm a GUI already listening on this port is serving the
+            # SAME canonical install, so a GUI can never be adopted across
+            # installs (which would split the runtime view).
             return handler.send_json(200, {"ok": True, "gui": "buster-gui",
-                                           "version": GUI_VERSION})
+                                           "version": GUI_VERSION,
+                                           "install_path": self.install_path,
+                                           "port": self.port})
         if path == "/api/bootstrap":
             info = self._rpc(lambda: self.daemon.update_info())
             status = self._rpc(lambda: self.daemon.status())
@@ -228,6 +265,9 @@ class GuiServer:
             return handler.send_json(200, {"ok": result.success,
                                            "data": result.data,
                                            "error": result.error})
+
+        if path == "/api/term" and method == "POST":
+            return self._api_term(handler, payload)
 
         if path == "/api/device":
             return handler.send_json(200, self._rpc(

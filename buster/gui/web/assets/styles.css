@@ -321,6 +321,24 @@ table.meta td:first-child { color: var(--text-faint); width: 34%; }
 .chat-composer input[type="text"] { flex: 1; min-width: 0; }
 .chat-composer button { flex: 0 0 auto; }
 
+/* Buster terminal (Prime Tech Terminal surface) */
+.term-output {
+  margin: 14px 0 0;
+  padding: 14px;
+  max-height: 46vh;
+  overflow: auto;
+  background: #08070d;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.term-output .term-error { color: var(--danger); }
+.term-output .term-ok { color: var(--ok); }
+
 /* files + grids */
 .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
 .tile { background: var(--bg-card); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 14px; cursor: pointer; }

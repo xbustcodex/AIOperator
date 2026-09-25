@@ -646,7 +646,7 @@ def run_daemon(install_path: str, config=None) -> int:
     from buster.kernel.core import Kernel
 
     config = config or Config(config_path=os.path.join(
-        install_path, "config", "config.json"))
+        install_path, "config", "config.json"), install_path=install_path)
 
     kernel = Kernel(config=config)
     server = RuntimeServer(kernel, install_path)
@@ -685,16 +685,47 @@ def _python_bin(python: Optional[str]) -> str:
     return python or sys.executable
 
 
+def runtime_ready(install_path: str, timeout: float = 3.0) -> bool:
+    try:
+        response = RuntimeClient(install_path, timeout=timeout).rpc("status")
+        data = response.get("data") or {}
+        return data.get("state") == "running"
+    except (RuntimeOfflineError, RuntimeRpcError):
+        return False
+
+
+def recover_wedged_runtime(install_path: str, timeout: float = 5.0) -> bool:
+    lock = RuntimeLock(install_path)
+    info = lock.read() or {}
+    if not info or not _pid_alive(info.get("pid")):
+        return not lock.is_online()
+    try:
+        RuntimeClient(install_path, timeout=min(1.0, timeout)).rpc("shutdown")
+    except (RuntimeOfflineError, RuntimeRpcError):
+        pass
+    if wait_offline(install_path, timeout=timeout):
+        return True
+    pid = info.get("pid")
+    if not _pid_alive(pid) or pid == os.getpid():
+        return not lock.is_online()
+    try:
+        os.kill(pid, 15)
+    except OSError:
+        pass
+    if not wait_offline(install_path, timeout=timeout):
+        return False
+    lock.release()
+    return True
+
+
 def wait_online(install_path: str, timeout: float = 15.0) -> bool:
-    client = RuntimeClient(install_path, timeout=3.0)
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            client.rpc("status")
+        remaining = max(0.1, min(3.0, deadline - time.time()))
+        if runtime_ready(install_path, timeout=remaining):
             return True
-        except (RuntimeOfflineError, RuntimeRpcError):
-            time.sleep(0.1)
-    return False
+        time.sleep(0.1)
+    return runtime_ready(install_path, timeout=0.5)
 
 
 def wait_offline(install_path: str, timeout: float = 10.0) -> bool:

@@ -25,6 +25,9 @@ class DoctorReport:
 def run_doctor() -> DoctorReport:
     report = DoctorReport()
 
+    from buster.install import resolve_install_path
+    install = resolve_install_path()
+
     report.add("python-version",
                ok=sys.version_info >= (3, 10),
                detail=f"{platform.python_version()} (>= 3.10 required)")
@@ -32,11 +35,11 @@ def run_doctor() -> DoctorReport:
                ok=is_termux_compatible(),
                detail=f"{host_identity()} ({os.environ.get('PREFIX', 'no PREFIX set')})")
     report.add("buster-install",
-               ok=os.path.isdir(os.path.expanduser("~/.buster")),
-               detail=os.path.expanduser("~/.buster"))
+               ok=os.path.isdir(install),
+               detail=install)
     report.add("buster-config",
-               ok=_check_config(),
-               detail="~/.buster/config/config.json readable")
+               ok=_check_config(install),
+               detail=f"{os.path.join(install, 'config', 'config.json')} readable")
     report.add("buster-version", ok=True, detail=f"v{get_version()}")
     report.add("kernel-boot",
                ok=_check_kernel_boot(),
@@ -45,9 +48,10 @@ def run_doctor() -> DoctorReport:
     return report
 
 
-def _check_config() -> bool:
+def _check_config(install: str) -> bool:
     try:
-        Config(config_path=os.path.join(os.path.expanduser("~/.buster"), "config", "config.json"))
+        Config(config_path=os.path.join(install, "config", "config.json"),
+                install_path=install)
         return True
     except Exception:  # noqa: BLE001
         return False
@@ -55,11 +59,9 @@ def _check_config() -> bool:
 
 def _check_kernel_boot() -> bool:
     try:
-        from buster.kernel.core import Kernel
-        kernel = Kernel(config=Config())
-        kernel.start()
-        kernel.stop()
-        return True
+        from buster.install import resolve_install_path
+        from buster.runtime import runtime_ready
+        return runtime_ready(resolve_install_path(), timeout=1.0)
     except Exception:  # noqa: BLE001
         return False
 

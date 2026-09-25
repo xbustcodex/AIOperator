@@ -5,6 +5,25 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-09-25
+
+### Fixed
+
+- Canonical install resolution now keeps explicit install paths, configuration,
+  daemon, CLI, GUI, diagnostics and migration on one state authority.
+- Normal launch bootstraps first, reuses or starts one daemon, and waits for
+  authoritative RPC readiness rather than relying on a PID lock alone.
+- The root launcher is a daemon client and cannot construct a competing Kernel.
+- Retired node compatibility surfaces, port 8081 and alternate CLI runtimes are
+  removed.
+- Final rootfs verification reads launcher bytes and Unix modes from the release
+  archive and requires LF-only content, valid shebangs and mode 0755.
+
+### Tests
+
+- Added resolver, single-runtime, readiness, stale-state, GUI-client, entry-path
+  and final-artifact coverage.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added — first consumer-facing Buster UI

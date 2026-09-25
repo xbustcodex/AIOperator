@@ -4,6 +4,7 @@ export const NAV_AREAS = [
   { id: "home", label: "Home", screen: "home", icon: "home" },
   { id: "talk", label: "Talk", screen: "chat", icon: "chat" },
   { id: "live", label: "Live", screen: "live", icon: "mic" },
+  { id: "terminal", label: "Terminal", screen: "terminal", icon: "term" },
   { id: "files", label: "Files", screen: "files", icon: "folder" },
   { id: "tasks", label: "Tasks", screen: "tasks", icon: "check" },
   { id: "memory", label: "Memory", screen: "memory", icon: "brain" },

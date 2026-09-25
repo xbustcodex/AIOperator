@@ -13,6 +13,8 @@ import os
 import shutil
 import time
 
+from buster.install import resolve_install_path
+
 log = logging.getLogger("buster.osbuild.migrate")
 
 _V02_STATE_DIRS = ("memory",)
@@ -25,13 +27,14 @@ CONFIG_FILE = "config/config.json"
 
 
 def find_v02_install(base: str | None = None) -> str:
-    return base or os.path.expanduser("~/.buster")
+    return base or resolve_install_path()
 
 
 def migrate_v02(source: str | None = None,
-                dest: str = "/var/lib/buster",
+                dest: str | None = None,
                 force: bool = False) -> dict:
     source = find_v02_install(source)
+    dest = resolve_install_path(explicit=dest)
     os.makedirs(dest, exist_ok=True)
 
     identity_file = os.path.join(dest, "identity.json")
@@ -94,5 +97,5 @@ def _read_json(path: str) -> dict:
 
 
 def system_install_path() -> str:
-    """Default system state directory for Buster OS."""
-    return os.environ.get("BUSTER_INSTALL", "/var/lib/buster")
+    """Default system state directory for Buster OS (canonical resolver)."""
+    return resolve_install_path()

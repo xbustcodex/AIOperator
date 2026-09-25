@@ -60,7 +60,7 @@ class Kernel:
         self.world_model = WorldModel(event_router=self.event_router)
         self.agent_manager = AgentManager(event_router=self.event_router)
 
-        install_path = self.config.get("install_path", os.path.expanduser("~/.buster/"))
+        install_path = self.config.install_path
         log_dir = os.path.join(install_path, "logs")
         self.audit = Audit(log_dir)
 
@@ -114,7 +114,7 @@ class Kernel:
         if self.state == "running":
             return
         self.state = "starting"
-        install_path = self.config.get("install_path", os.path.expanduser("~/.buster/"))
+        install_path = self.config.install_path
         self.logger.info("Buster OS kernel %s starting", get_version())
 
         setup_logging(os.path.join(install_path, "logs"),
@@ -233,7 +233,7 @@ class Kernel:
     # -- internal helpers ----------------------------------------------
 
     def _default_protected(self) -> list[str]:
-        install_path = self.config.get("install_path", os.path.expanduser("~/.buster/"))
+        install_path = self.config.install_path
         return [
             install_path.rstrip(os.sep) + os.sep,
             os.path.join(install_path, "config"),

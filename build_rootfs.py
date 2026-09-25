@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import stat
 import sys
@@ -80,11 +81,25 @@ def build_arch(arch_token: str, *, distro: str, mirror: str,
                security_mirror: str, out_dir: str, buster_source: str,
                keep: bool = False, limit: int = 0) -> dict:
     """Build one architecture. Returns paths to produced artifacts."""
+    workdir = tempfile.mkdtemp(prefix=f"buster-rootfs-{arch_token}-")
+    try:
+        return _build_arch_in(arch_token, workdir, distro=distro, mirror=mirror,
+                              security_mirror=security_mirror, out_dir=out_dir,
+                              buster_source=buster_source, limit=limit)
+    finally:
+        if keep:
+            log.info("rootfs workdir kept at %s", os.path.join(workdir, "rootfs"))
+        else:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _build_arch_in(arch_token: str, workdir: str, *, distro: str, mirror: str,
+                   security_mirror: str, out_dir: str, buster_source: str,
+                   limit: int = 0) -> dict:
     meta = lookup(arch_token)
     version = get_version()
     snapshot_date = datetime.date.today().isoformat()
 
-    workdir = tempfile.mkdtemp(prefix=f"buster-rootfs-{arch_token}-")
     rootfs_dir = os.path.join(workdir, "rootfs")
     root = Rootfs(rootfs_dir, arch_token)
 
@@ -165,11 +180,6 @@ def build_arch(arch_token: str, *, distro: str, mirror: str,
             "checks": checks,
         }, handle, indent=2)
 
-    if keep:
-        log.info("rootfs workdir kept at %s", rootfs_dir)
-    else:
-        shutil.rmtree(workdir, ignore_errors=True)
-
     print(f"Buster OS {version} rootfs artifact ({arch_token}): {artifact_path}")
     print(f"verification ({arch_token}): {passed}/{len(checks)}")
     return {
@@ -244,6 +254,7 @@ def verify_rootfs(root: Rootfs, meta, artifact_path: str) -> dict:
     check("buster:installed", os.path.isfile(
         root._path("opt/buster/lib/buster/version.py")))
     check("tooling:dpkg", os.path.isfile(root._path("usr/bin/dpkg")))
+    checks.update(verify_buster_layer(root, artifact_path))
     checks.update(verify_tar_metadata(artifact_path, meta))
     return checks
 
@@ -259,6 +270,116 @@ def read_tar_member_index(tar_path: str) -> dict:
             if clean:
                 index[clean] = (member.type, member.mode)
     return index
+
+
+# ---------------------------------------------------------------------------
+# Buster-owned Linux layer verification (Windows-build -> Linux-artifact)
+# ---------------------------------------------------------------------------
+
+#: Buster-generated launchers: must be LF-only, valid shebang, executable.
+BUSTER_LAUNCHERS = ("usr/bin/buster", "usr/bin/busterctl", "usr/bin/buster-gui")
+
+#: Other Buster-generated scripts/config that must never carry CRLF.
+BUSTER_TEXT_FILES = (
+    "etc/init.d/buster",
+    "etc/profile.d/buster.sh",
+    "etc/buster/config.json",
+    "etc/buster/buster.env",
+    "usr/share/buster/identity.json",
+    "usr/share/buster/VERSION",
+)
+
+#: Python modules reachable through a ``python -m`` entry point.
+BUSTER_ENTRY_MODULES = (
+    "opt/buster/lib/buster/cli/__main__.py",
+    "opt/buster/lib/buster/gui/__main__.py",
+    "opt/buster/lib/buster/gui/server.py",
+    "opt/buster/lib/buster/system/busterctl.py",
+)
+
+
+def _tar_bytes(tar_path: str, name: str) -> bytes | None:
+    if not tar_path:
+        return None
+    try:
+        with tarfile.open(tar_path, "r:gz") as tar:
+            member = tar.getmember(name)
+            if not member.isfile():
+                return None
+            handle = tar.extractfile(member)
+            return handle.read() if handle else None
+    except (KeyError, tarfile.TarError, OSError):
+        return None
+
+
+def verify_buster_layer(root: Rootfs, artifact_path: str) -> dict:
+    """Verify Buster-owned launchers and entry points from archive bytes."""
+    checks: dict[str, dict] = {}
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks[name] = {"ok": bool(ok), "detail": detail}
+
+    if not artifact_path or not os.path.isfile(artifact_path):
+        for rel in BUSTER_LAUNCHERS:
+            check(f"launcher:present:{rel}", False, "archive missing")
+        return checks
+
+    with tarfile.open(artifact_path, "r:gz") as tar:
+        members = {member.name.rstrip("/"): member for member in tar.getmembers()}
+
+        def archived(rel: str):
+            member = members.get(rel)
+            if member is None or not member.isfile():
+                return None, b""
+            handle = tar.extractfile(member)
+            return member, handle.read() if handle is not None else b""
+
+        for rel in BUSTER_LAUNCHERS:
+            member, raw = archived(rel)
+            check(f"launcher:present:{rel}", member is not None and bool(raw), rel)
+            crlf = b"\r\n" in raw
+            bare_cr = b"\r" in raw.replace(b"\r\n", b"")
+            check(f"launcher:lf-only:{rel}", not (crlf or bare_cr),
+                  "LF-only" if not (crlf or bare_cr) else "CR/CRLF found")
+            first_line = raw.split(b"\n", 1)[0]
+            check(f"launcher:shebang:{rel}", first_line == b"#!/bin/sh",
+                  first_line.decode("ascii", "replace")
+                  if first_line else "missing shebang")
+            check(f"launcher:mode:{rel}",
+                  member is not None and (member.mode & 0o777) == 0o755,
+                  oct(member.mode & 0o777) if member is not None else "missing")
+            text = raw.decode("utf-8", "replace")
+            pinned = ("/var/lib/buster" in text
+                      or "--install-path" in text
+                      or "BUSTER_INSTALL=" in text)
+            check(f"launcher:no-hardcoded-path:{rel}", not pinned,
+                  "resolved at runtime" if not pinned else "hard-coded install path")
+
+        for rel in BUSTER_TEXT_FILES:
+            member, raw = archived(rel)
+            if member is not None:
+                check(f"text:lf-only:{rel}", b"\r" not in raw,
+                      "LF-only" if b"\r" not in raw else "CR found")
+
+        member, config_raw = archived("etc/buster/config.json")
+        config_text = config_raw.decode("utf-8", "replace")
+        check("config:canonical-install", member is not None
+              and '"install_path"' in config_text
+              and "/var/lib/buster" in config_text,
+              "/var/lib/buster declared in archive config")
+
+        for rel in BUSTER_ENTRY_MODULES:
+            member, raw = archived(rel)
+            if member is None:
+                check(f"entry:present:{rel}", False, "missing from archive")
+                continue
+            source = raw.decode("utf-8", "replace")
+            if "sys.exit(" in source:
+                check(f"entry:sys-import:{rel}",
+                      re.search(r"^import sys$", source, re.M) is not None,
+                      "imports sys")
+
+    return checks
 
 
 def verify_tar_metadata(tar_path: str, meta) -> dict:

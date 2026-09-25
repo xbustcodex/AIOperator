@@ -10,9 +10,8 @@ import sys
 
 from buster.android_integration.device import host_identity, is_termux_compatible
 from buster.config import Config
+from buster.install import resolve_install_path
 from buster.logging import setup_logging
-
-INSTALL_BASE = os.path.expanduser("~/.buster")
 
 SUBDIRS = [
     "config",
@@ -43,11 +42,13 @@ def main() -> int:
         print("       Buster OS targets TerminalP (Termux-class Android terminal) on Android.")
         return 1
 
-    create_directories(INSTALL_BASE)
-    setup_logging(os.path.join(INSTALL_BASE, "logs"), "INFO")
+    install = resolve_install_path()
+    create_directories(install)
+    setup_logging(os.path.join(install, "logs"), "INFO")
     logging.info("Starting Buster OS installation...")
 
-    config = Config(config_path=os.path.join(INSTALL_BASE, "config", "config.json"))
+    config = Config(config_path=os.path.join(install, "config", "config.json"),
+                    install_path=install)
     logging.info("Configuration initialized at %s", config.config_path)
 
     print(f"\nBuster OS installation completed successfully on {host_identity()}!")

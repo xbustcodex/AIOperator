@@ -18,6 +18,7 @@ import logging
 import os
 from typing import Optional
 
+from buster.install import resolve_install_path
 from buster.version import get_version
 
 SUBDIRS = [
@@ -38,7 +39,11 @@ MARKER_NAME = "bootstrapped"
 
 def bootstrap_offline(config, install_path: Optional[str] = None) -> dict:
     """Installation/initialization phase. No kernel is created."""
-    install_path = install_path or config.get("install_path", os.path.expanduser("~/.buster/"))
+    install_path = resolve_install_path(
+        explicit=install_path or config.get("install_path"))
+    if config.get("install_path") != install_path:
+        config.install_path = install_path
+        config.save()
     logger = logging.getLogger("buster.bootstrap")
 
     summary = {

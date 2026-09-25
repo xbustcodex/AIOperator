@@ -32,7 +32,7 @@ class IntelligenceBundle:
 
     def __init__(self, kernel):
         self.kernel = kernel
-        install_path = kernel.config.get("install_path", os.path.expanduser("~/.buster/"))
+        install_path = kernel.config.install_path
         state_dir = os.path.join(install_path, "state")
         memory_dir = os.path.join(install_path, "memory")
         os.makedirs(state_dir, exist_ok=True)

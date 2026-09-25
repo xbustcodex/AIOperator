@@ -359,5 +359,37 @@ class FileModePreservationTests(unittest.TestCase):
         self.assertEqual(names["usr/bin/tool-link"].linkname, "tool")
 
 
+class FinalArtifactEntryTests(unittest.TestCase):
+    def test_final_archive_has_exact_buster_launchers(self):
+        import build_rootfs
+        work = tempfile.mkdtemp()
+        root = Rootfs(work, "amd64")
+        root.build_layout()
+        root.install_buster(os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__)))), version=get_version())
+        artifact = os.path.join(work, "rootfs.tar.gz")
+        with tarfile.open(artifact, "w:gz") as tar:
+            root.pack_tree(tar)
+        checks = build_rootfs.verify_buster_layer(root, artifact)
+        failed = [name for name, value in checks.items() if not value["ok"]]
+        self.assertFalse(failed, failed)
+        with tarfile.open(artifact, "r:gz") as tar:
+            for rel in build_rootfs.BUSTER_LAUNCHERS:
+                member = tar.getmember(rel)
+                self.assertEqual(member.mode & 0o777, 0o755)
+                raw = tar.extractfile(member).read()
+                self.assertTrue(raw.startswith(b"#!/bin/sh\n"))
+                self.assertNotIn(b"\r", raw)
+
+    def test_final_archive_verification_does_not_use_staging(self):
+        import build_rootfs
+        work = tempfile.mkdtemp()
+        root = Rootfs(work, "amd64")
+        root.build_layout()
+        root.write_binary("usr/bin/buster", b"#!/bin/sh\n", 0o755)
+        checks = build_rootfs.verify_buster_layer(root, None)
+        self.assertTrue(checks["launcher:present:usr/bin/buster"]["ok"] is False)
+
+
 if __name__ == "__main__":
     unittest.main()
