@@ -10,11 +10,16 @@ import io
 import json
 import os
 import struct
+import sys
 import tarfile
 import tempfile
 import time
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))))
+
+import build_rootfs  # noqa: E402
 from buster.osbuild import deb, manifest, migrate, packages, resolver
 from buster.osbuild.identity import os_release
 from buster.osbuild.rootfs import Rootfs
@@ -360,16 +365,21 @@ class FileModePreservationTests(unittest.TestCase):
 
 
 class FinalArtifactEntryTests(unittest.TestCase):
-    def test_final_archive_has_exact_buster_launchers(self):
-        import build_rootfs
+    def _packed_rootfs(self):
+        """Pack a rootfs through the same layer order the release build uses."""
         work = tempfile.mkdtemp()
         root = Rootfs(work, "amd64")
         root.build_layout()
+        root.write_os_release(get_version())
         root.install_buster(os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__)))), version=get_version())
         artifact = os.path.join(work, "rootfs.tar.gz")
         with tarfile.open(artifact, "w:gz") as tar:
             root.pack_tree(tar)
+        return root, artifact
+
+    def test_final_archive_has_exact_buster_launchers(self):
+        root, artifact = self._packed_rootfs()
         checks = build_rootfs.verify_buster_layer(root, artifact)
         failed = [name for name, value in checks.items() if not value["ok"]]
         self.assertFalse(failed, failed)
@@ -389,6 +399,84 @@ class FinalArtifactEntryTests(unittest.TestCase):
         root.write_binary("usr/bin/buster", b"#!/bin/sh\n", 0o755)
         checks = build_rootfs.verify_buster_layer(root, None)
         self.assertTrue(checks["launcher:present:usr/bin/buster"]["ok"] is False)
+
+
+class FinalArtifactExecSurfaceTests(unittest.TestCase):
+    """The release pipeline must prove the exec bridge is in the ARCHIVE.
+
+    A rootfs built from a stale or partial Buster package would otherwise pass
+    structural verification while shipping a bridge that cannot parse anything.
+    """
+
+    def setUp(self):
+        import build_rootfs
+        self.build_rootfs = build_rootfs
+        work = tempfile.mkdtemp()
+        self.root = Rootfs(work, "amd64")
+        self.root.build_layout()
+        self.root.write_os_release(get_version())
+        self.repo_src = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        self.root.install_buster(self.repo_src, version=get_version())
+        self.artifact = os.path.join(work, "rootfs.tar.gz")
+        with tarfile.open(self.artifact, "w:gz") as tar:
+            self.root.pack_tree(tar)
+
+    def _checks(self):
+        return self.build_rootfs.verify_buster_layer(self.root, self.artifact)
+
+    def test_exec_surface_is_verified_from_archive_bytes(self):
+        checks = self._checks()
+        for rel in self.build_rootfs.BUSTER_EXEC_MODULES:
+            self.assertTrue(checks[f"exec:present:{rel}"]["ok"], rel)
+            self.assertTrue(checks[f"exec:lf-only:{rel}"]["ok"], rel)
+        self.assertTrue(checks["exec:parser-markers"]["ok"])
+        self.assertTrue(checks["exec:no-passthrough"]["ok"])
+        self.assertTrue(checks["exec:verb-registered"]["ok"])
+        self.assertTrue(checks["exec:rpc-ops"]["ok"])
+
+    def test_packaged_parser_carries_the_closed_vocabulary_and_grammar(self):
+        with tarfile.open(self.artifact, "r:gz") as tar:
+            member = tar.getmember("opt/buster/lib/buster/exec.py")
+            raw = tar.extractfile(member).read()
+        self.assertNotIn(b"\r", raw)
+        source = raw.decode("utf-8")
+        for marker in self.build_rootfs.BUSTER_EXEC_MARKERS:
+            self.assertIn(marker, source)
+        self.assertIn("service-start", source)
+        self.assertIn("service-restart", source)
+        self.assertIn("service-status", source)
+        self.assertIn("exec_main", source)
+
+    def test_archive_version_agrees_with_the_release(self):
+        checks = self._checks()
+        self.assertTrue(checks["identity:archive-version"]["ok"],
+                        checks["identity:archive-version"]["detail"])
+        self.assertTrue(checks["identity:archive-VERSION-file"]["ok"])
+        self.assertTrue(checks["identity:archive-os-release"]["ok"])
+        with tarfile.open(self.artifact, "r:gz") as tar:
+            raw = tar.extractfile(
+                tar.getmember("opt/buster/lib/buster/version.py")).read()
+        self.assertIn(f'__version__ = "{get_version()}"',
+                      raw.decode("utf-8"))
+
+    def test_stale_archive_without_the_parser_fails_verification(self):
+        """Negative control: the check must be able to fail."""
+        stale = os.path.join(os.path.dirname(self.artifact), "stale.tar.gz")
+        with tarfile.open(self.artifact, "r:gz") as src:
+            with tarfile.open(stale, "w:gz") as dst:
+                for member in src.getmembers():
+                    if member.name in self.build_rootfs.BUSTER_EXEC_MODULES:
+                        continue
+                    if member.isfile():
+                        dst.addfile(member, src.extractfile(member))
+                    else:
+                        dst.addfile(member)
+        checks = self.build_rootfs.verify_buster_layer(self.root, stale)
+        self.assertFalse(checks["exec:present:opt/buster/lib/buster/exec.py"]["ok"])
+        self.assertFalse(checks["exec:parser-markers"]["ok"])
+        self.assertFalse(checks["exec:verb-registered"]["ok"])
+        self.assertFalse(checks["exec:rpc-ops"]["ok"])
 
 
 if __name__ == "__main__":

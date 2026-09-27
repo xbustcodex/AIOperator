@@ -297,6 +297,39 @@ BUSTER_ENTRY_MODULES = (
     "opt/buster/lib/buster/system/busterctl.py",
 )
 
+#: The typed ``buster exec`` bridge surface. It is a client of the single
+#: runtime, so the artifact must ship the guest-side parser, the CLI verb that
+#: reaches it, and the daemon-side service-catalog operations it dispatches to.
+BUSTER_EXEC_MODULES = (
+    "opt/buster/lib/buster/exec.py",
+    "opt/buster/lib/buster/cli/commands.py",
+    "opt/buster/lib/buster/runtime.py",
+)
+
+#: Packaged parser module (the guest half of the bridge contract).
+BUSTER_EXEC_PARSER = "opt/buster/lib/buster/exec.py"
+
+#: Markers proving the packaged parser really carries the closed verb
+#: vocabulary and the mirrored service-name grammar.
+BUSTER_EXEC_MARKERS = (
+    "SERVICE_NAME = re.compile",
+    "READ_VERBS = (",
+    "SERVICE_VERBS = (",
+    "def is_valid_service_name",
+    "def exec_main",
+)
+
+#: Constructs that would turn the closed-vocabulary bridge into a generic
+#: command passthrough. Their presence in the packaged parser is a defect.
+BUSTER_EXEC_PASSTHROUGH = (
+    "os.system", "os.popen", "subprocess", "shlex", "shell=True",
+    "eval(", "exec(",
+)
+
+#: Daemon-side operations the packaged control verbs must dispatch to.
+BUSTER_EXEC_RPC_OPS = ('op == "services"',
+                       'op in ("service_start", "service_restart")')
+
 
 def _tar_bytes(tar_path: str, name: str) -> bytes | None:
     if not tar_path:
@@ -378,6 +411,75 @@ def verify_buster_layer(root: Rootfs, artifact_path: str) -> dict:
                 check(f"entry:sys-import:{rel}",
                       re.search(r"^import sys$", source, re.M) is not None,
                       "imports sys")
+
+        # The typed exec bridge is verified from the archive, never from the
+        # staging tree or source HEAD: a rootfs that shipped a stale or partial
+        # buster package would otherwise pass unnoticed.
+        for rel in BUSTER_EXEC_MODULES:
+            member, raw = archived(rel)
+            check(f"exec:present:{rel}", member is not None and bool(raw),
+                  rel if member is not None else "missing from archive")
+            if member is not None:
+                check(f"exec:lf-only:{rel}", b"\r" not in raw,
+                      "LF-only" if b"\r" not in raw else "CR found")
+
+        _, parser_raw = archived(BUSTER_EXEC_PARSER)
+        parser = parser_raw.decode("utf-8", "replace")
+        missing = [m for m in BUSTER_EXEC_MARKERS if m not in parser]
+        check("exec:parser-markers", not missing,
+              "closed vocabulary + service-name grammar"
+              if not missing else f"missing: {missing}")
+        passthrough = [c for c in BUSTER_EXEC_PASSTHROUGH if c in parser]
+        check("exec:no-passthrough", not passthrough,
+              "no shell/eval passthrough"
+              if not passthrough else f"passthrough: {passthrough}")
+
+        _, dispatch_raw = archived("opt/buster/lib/buster/cli/commands.py")
+        dispatch = dispatch_raw.decode("utf-8", "replace")
+        check("exec:verb-registered", '"exec": cmd_exec' in dispatch,
+              "buster exec routed to buster.exec.exec_main")
+
+        _, runtime_raw = archived("opt/buster/lib/buster/runtime.py")
+        runtime_src = runtime_raw.decode("utf-8", "replace")
+        absent_ops = [o for o in BUSTER_EXEC_RPC_OPS if o not in runtime_src]
+        check("exec:rpc-ops", not absent_ops,
+              "services/service_start/service_restart served by the daemon"
+              if not absent_ops else f"missing: {absent_ops}")
+
+        # Version/identity must agree with the release being built, read from
+        # the archive rather than the staging tree or source HEAD.
+        version = get_version()
+        _, version_raw = archived("opt/buster/lib/buster/version.py")
+        version_src = version_raw.decode("utf-8", "replace")
+        declared = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', version_src)
+        check("identity:archive-version", declared is not None
+              and declared.group(1) == version,
+              f"archive declares {declared.group(1) if declared else None}, "
+              f"release is {version}")
+
+        _, version_file = archived("usr/share/buster/VERSION")
+        check("identity:archive-VERSION-file",
+              version_file.decode("utf-8", "replace").strip() == version,
+              version)
+
+        _, osrelease_raw = archived("usr/lib/os-release")
+        osrelease = osrelease_raw.decode("utf-8", "replace")
+        check("identity:archive-os-release",
+              "ID=busteros" in osrelease
+              and f'VERSION_ID="{version}"' in osrelease,
+              f"ID=busteros VERSION_ID={version}" if osrelease
+              else "usr/lib/os-release missing from archive")
+
+        # merged-/usr: etc/os-release is normally a symlink to the real file,
+        # so verify the link target rather than assuming a regular file.
+        etc_member = members.get("etc/os-release")
+        if etc_member is not None and etc_member.issym():
+            check("identity:archive-os-release-symlink",
+                  etc_member.linkname == "../usr/lib/os-release",
+                  etc_member.linkname)
+        else:
+            check("identity:archive-os-release-symlink", etc_member is not None,
+                  "etc/os-release regular file (not a merged-/usr symlink)")
 
     return checks
 

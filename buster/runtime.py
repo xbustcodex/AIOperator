@@ -20,7 +20,7 @@ Layout
 
 The daemon serves the RPC surface regardless of transport: call, status,
 caps, grant, deny, jobs, jobs_cancel, run_async, mem_*, audit, sensors,
-plan, shutdown.
+plan, services, service_start, service_restart, shutdown.
 """
 
 import json
@@ -345,6 +345,10 @@ class RuntimeServer:
                     "status": run.status.value, "error": run.error,
                     "result": run.result, "steps": len(run.history),
                 })}
+            if op == "services":
+                return {"op": op, "ok": True, "data": self._rpc_services()}
+            if op in ("service_start", "service_restart"):
+                return self._rpc_service_control(op, message)
             if op == "shutdown":
                 self._running = False
                 self.logger.info("Shutdown requested.")
@@ -405,6 +409,96 @@ class RuntimeServer:
             "goals": goals,
             "suggestions": suggestions,
         }
+
+    # -- service catalog (TerminalP bridge contract) -------------------
+
+    _KERNEL_SERVICES = (
+        {"name": "event-router", "kind": "kernel",
+         "description": "single event bus"},
+        {"name": "scheduler", "kind": "kernel",
+         "description": "single job scheduler"},
+    )
+
+    _SERVICE_STOP_STATUS = ("stopped", "failed", "completed", "cancelled")
+
+    @staticmethod
+    def _job_service_row(job):
+        return {"name": job.name, "kind": "job", "state": job.status.value,
+                "periodic": bool(job.periodic), "id": job.id}
+
+    def _rpc_services(self) -> dict:
+        """Read-only runtime service catalog for the typed exec bridge."""
+        kernel = self.kernel
+        services = []
+        for spec in self._KERNEL_SERVICES:
+            running = (kernel.event_router.running if spec["name"] == "event-router"
+                       else kernel.scheduler.running)
+            services.append({**spec, "state": "running" if running else "stopped"})
+        for agent in kernel.agent_manager.list_agents():
+            services.append({"name": agent.name, "kind": "agent",
+                             "state": agent.status, "agent_id": agent.agent_id})
+        for job in kernel.scheduler.list_jobs():
+            services.append(self._job_service_row(job))
+        return {"services": services}
+
+    def _rpc_service_control(self, op: str, message: dict) -> dict:
+        """Typed start/restart over the service catalog.
+
+        Kernel components start and stop with the runtime and are reported as
+        such rather than being independently controllable. Agents are
+        (re)activated by registry lifecycle transition inside the one kernel;
+        jobs are re-armed by their registered starter when one exists. The
+        operation never executes caller-supplied code: ``name`` only selects
+        among already-registered runtime services.
+        """
+        name = message.get("name")
+        if not isinstance(name, str) or not name:
+            return {"op": op, "ok": False, "error": "service 'name' required"}
+        kernel = self.kernel
+        catalog = self._rpc_services()["services"]
+        row = next((r for r in catalog if r["name"] == name), None)
+        if row is None:
+            return {"op": op, "ok": False, "error": f"unknown service '{name}'"}
+
+        if row["kind"] == "kernel":
+            running = row["state"] == "running"
+            return {"op": op, "ok": True, "data": {
+                "name": name, "kind": "kernel", "state": row["state"],
+                "detail": "kernel-managed; starts and stops with the runtime",
+                "changed": False, "was_running": running,
+            }}
+
+        if row["kind"] == "agent":
+            agent = kernel.agent_manager.get(row["agent_id"])
+            if agent.status == "active" and op == "service_start":
+                return {"op": op, "ok": True, "data": {
+                    "name": name, "kind": "agent", "state": agent.status,
+                    "changed": False,
+                }}
+            kernel.agent_manager.activate(agent.agent_id)
+            return {"op": op, "ok": True, "data": {
+                "name": name, "kind": "agent",
+                "state": agent.status, "changed": True,
+            }}
+
+        # Scheduler job: re-arm by re-scheduling its periodic task, if it is
+        # registered for restart; otherwise report the observed state.
+        job = kernel.scheduler.get(row["id"])
+        if job is None:
+            return {"op": op, "ok": False, "error": f"service '{name}' vanished"}
+        if job.interval is None:
+            return {"op": op, "ok": True, "data": {
+                "name": name, "kind": "job", "state": job.status.value,
+                "changed": False,
+                "detail": "one-shot job; state reported, not restarted",
+            }}
+        rearm = kernel.scheduler.schedule(name=job.name, func=job.func,
+                                          every=job.interval,
+                                          priority=job.priority)
+        return {"op": op, "ok": True, "data": {
+            "name": name, "kind": "job", "state": rearm.status.value,
+            "changed": True, "id": rearm.id,
+        }}
 
     def _heartbeat(self) -> None:
         snapshot = self.kernel.status()

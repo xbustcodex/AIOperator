@@ -161,12 +161,33 @@ class ArchAwareVerifyTests(unittest.TestCase):
             root._write_metadata(rel, "# x\n", 0o644)
         root.write_binary("usr/bin/dpkg", b"# fake dpkg\n", 0o755)
         root.write_binary("usr/bin/apt-get", b"# fake apt\n", 0o755)
-        root._write_metadata("etc/os-release",
-                             'NAME="Buster OS"\nID=busteros\nID_LIKE=debian\n')
+        root.write_os_release(get_version())
         os.makedirs(root._path("opt/buster/lib/buster"), exist_ok=True)
         root._record("opt/buster/lib/buster", "dir", 0o755)
         root._write_metadata("opt/buster/lib/buster/version.py",
                               f"__version__='{get_version()}'\n")
+        root._write_metadata("usr/share/buster/VERSION", f"{get_version()}\n")
+        # The typed exec bridge must be modelled by the synthetic artifact too:
+        # verify_rootfs proves the packaged parser, CLI verb and daemon RPC
+        # operations from archive bytes, so a fixture that omits them is not a
+        # faithful stand-in for a real release.
+        root._write_metadata(
+            "opt/buster/lib/buster/exec.py",
+            'SERVICE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")\n'
+            'READ_VERBS = ("status", "services")\n'
+            'SERVICE_VERBS = ("service-start",)\n'
+            "def is_valid_service_name(name):\n    return True\n"
+            "def exec_main(args, out=None):\n    return 0\n")
+        root._write_metadata(
+            "opt/buster/lib/buster/cli/commands.py",
+            'def cmd_exec(args):\n    return 0\n\n\nCOMMANDS = {\n'
+            '    "exec": cmd_exec,\n}\n')
+        root._write_metadata(
+            "opt/buster/lib/buster/runtime.py",
+            'def handle(message):\n    op = message.get("op")\n'
+            '    if op == "services":\n        return {}\n'
+            '    if op in ("service_start", "service_restart"):\n'
+            "        return {}\n    return {}\n")
         for rel in ("home/buster", "var/lib/buster", "run/buster", "tmp",
                     "dev", "proc", "sys", "root", "bin", "sbin", "lib"):
             os.makedirs(root._path(rel), exist_ok=True)

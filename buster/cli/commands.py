@@ -391,6 +391,16 @@ def cmd_goal(args) -> int:
     return 0
 
 
+def cmd_exec(args) -> int:
+    """Typed bridge surface: ``buster exec <operation> [<service-name>]``.
+
+    A closed vocabulary dispatched by buster.exec -- no generic command
+    passthrough. See buster/exec.py for the contract.
+    """
+    from buster.exec import exec_main
+    return exec_main(args)
+
+
 def cmd_health(args) -> int:
     return cmd_intel(["health", *_install_flag(args)])
 
@@ -424,6 +434,9 @@ def cmd_help(args) -> int:
         "\n"
         "Management (requires the single live runtime):\n"
         "  caps               List capabilities and actions\n"
+        "  exec <op>          Typed bridge operation (status, services,\n"
+        "                     capabilities, health, ping, service-start/\n"
+        "                     -restart/-status <name>); JSON on stdout\n"
         "  run <action>       Invoke a capability action (k=v args)\n"
         "  grant <action>     Grant an action permission\n"
         "  deny <action>      Deny an action permission\n"
@@ -473,6 +486,7 @@ COMMANDS = {
     "intel": cmd_intel,
     "goal": cmd_goal,
     "health": cmd_health,
+    "exec": cmd_exec,
     "help": cmd_help,
 }
 

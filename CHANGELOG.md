@@ -5,6 +5,61 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-09-27
+
+### Added — typed `buster exec` bridge surface
+
+- **Guest-side exec surface** (`buster/exec.py`): a closed vocabulary of typed
+  operations for the TerminalP privileged bridge (`proot-distro buster exec
+  <verb> [<service-name>]`). Read verbs (`status`, `services`, `capabilities`,
+  `health`, `ping`) always produce exactly one JSON document on stdout —
+  including while the runtime is offline, because a state report is a
+  successful diagnostic. Control verbs refuse while offline with a typed
+  error.
+- **Refused before the runtime is touched**: unknown verbs, wrong arity and
+  malformed service names are rejected at parse time. The service-name grammar
+  mirrors the host bridge exactly (`^[A-Za-z0-9][A-Za-z0-9_.-]*$`, 1..64
+  characters), so a refused name never reaches the daemon. There is
+  deliberately no fallback: no shell evaluation, no arbitrary argv forwarding,
+  no executable path input, no caller-controlled environment or working
+  directory, and no generic command mode. Typed exit codes: 0 = document
+  produced / control succeeded, 1 = refused or failed, 2 = usage/grammar.
+- **Service catalog over the existing file RPC** (`buster/runtime.py`): the
+  daemon serves `services`, `service_start` and `service_restart` from the one
+  live runtime — kernel components (`event-router`, `scheduler`), named agents
+  and named scheduler jobs. Kernel components are observed only, since they
+  start and stop with the runtime; agent transitions are registry lifecycle
+  events inside the one kernel; periodic jobs are re-armed by their own
+  registered task. The operation never executes caller-supplied code: `name`
+  only selects among already-registered runtime services.
+- **CLI surface** (`buster/cli/commands.py`): `buster exec <op>` routed to
+  `buster.exec.exec_main`, documented in `buster help`. The exec path is a
+  client of the single runtime and never constructs a second Kernel.
+- **Artifact-level verification** (`build_rootfs.py`): the release pipeline
+  now proves the exec surface is actually *in the artifact* rather than in
+  the staging tree or source HEAD — the packaged parser, CLI verb and daemon
+  RPC operations must be present, LF-only, carry the closed vocabulary and
+  service-name grammar, and contain no shell/eval passthrough. Version/identity
+  (`version.py`, `usr/share/buster/VERSION`, `etc/os-release`) is likewise
+  verified from archive bytes against the release being built.
+
+### Tests
+
+- `buster/tests/test_exec.py`: closed-vocabulary dispatch, mirrored
+  service-name grammar (valid edge cases reach the handler; every invalid
+  form is refused before runtime access), daemon-backed service catalog over
+  real file RPC, and metacharacter names refused before the daemon.
+- `buster/tests/test_osbuild.py` (extended): archive-level exec-surface and
+  version/identity checks, including a negative control proving the checks
+  fail against a stale archive whose parser is missing. Full suite: 221 tests
+  passing (`python -m unittest discover -s buster/tests -p "test_*.py"`), plus
+  16 passing Node frontend tests.
+
+### Changed
+
+- Version 0.4.2. Buster 0.4.1 artifacts and their recorded digests are left
+  untouched; this release is a distinct, versioned artifact.
+
 ## [0.4.1] - 2026-09-25
 
 ### Fixed
@@ -22,7 +77,10 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ### Tests
 
 - Added resolver, single-runtime, readiness, stale-state, GUI-client, entry-path
-  and final-artifact coverage.
+  and final-artifact coverage. Verified full suite for this release: 202 tests
+  passing (`python -m unittest discover -s buster/tests -p "test_*.py"`). The
+  "190 tests" figure in the 0.4.0 entry is correct for 0.4.0 only — re-measured
+  at `4485f5b`, 0.4.0 ran 190 tests with 1 skip.
 
 ## [0.4.0] - 2026-09-24
 
