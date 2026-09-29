@@ -1,11 +1,11 @@
 """Central version definition for Buster OS."""
 
-__version__ = "0.4.2"
+__version__ = "0.4.4"
 
 VERSION = __version__
 VERSION_MAJOR = 0
 VERSION_MINOR = 4
-VERSION_PATCH = 2
+VERSION_PATCH = 4
 
 
 def get_version() -> str:

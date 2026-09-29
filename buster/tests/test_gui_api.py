@@ -215,5 +215,46 @@ class GuiNoKernelTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
+class BootstrapIntelViewFragilityTests(unittest.TestCase):
+    """Pins the documented shape of `/api/bootstrap`'s unguarded host lookup.
+
+    `intel_view("world")` is called outside `_rpc`, so an RPC failure there
+    becomes a 500 rather than the typed 503. This test records that behaviour
+    so the known issue is visible and cannot change silently; it is not an
+    endorsement of it. See the "Known issue" entry in CHANGELOG.md.
+    """
+
+    def test_host_lookup_is_outside_the_rpc_guard(self):
+        source = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "gui", "server.py")
+        with open(source, "r", encoding="utf-8") as handle:
+            text = handle.read()
+        start = text.index('if path == "/api/bootstrap":')
+        block = text[start:text.index('if path == "/api/home":', start)]
+        self.assertIn("self.daemon.intel_view(\"world\")", block)
+        # The two neighbouring reads are guarded; this one deliberately is not.
+        self.assertEqual(block.count("self._rpc("), 2)
+        self.assertNotIn("self._rpc(lambda: self.daemon.intel_view", block)
+
+    def test_guarded_neighbour_reads_still_raise_typed_503(self):
+        install, config = _bootstrapped()
+        gui = None
+        server = None
+        try:
+            server, kernel = _start_daemon(install, config)
+            gui, url = _start_gui(install)
+            status, body = _get(f"{url}/api/bootstrap")
+            self.assertEqual(status, 200)
+            self.assertTrue(body["online"])
+            self.assertEqual(body["runtime_state"], "running")
+            self.assertEqual(body["install_path"], install)
+        finally:
+            if gui is not None:
+                gui.stop()
+            if server is not None:
+                server.close()
+
+
 if __name__ == "__main__":
     unittest.main()

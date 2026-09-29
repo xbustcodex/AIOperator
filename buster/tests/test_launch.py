@@ -10,7 +10,8 @@ from unittest.mock import patch
 from buster.bootstrap import bootstrap_offline
 from buster.config import Config
 from buster.install import resolve_install_path
-from buster.launch import ensure_bootstrap, ensure_gui, ensure_runtime, launch
+from buster.launch import (ensure_bootstrap, ensure_gui, ensure_runtime, launch,
+                           open_ui, _present_via_bridge)
 from buster.runtime import RuntimeClient, RuntimeLock, wait_offline, wait_online
 
 
@@ -167,6 +168,116 @@ class EntryPathTests(unittest.TestCase):
                 wait_offline(install, timeout=10)
             except Exception:
                 pass
+
+
+class OpenUiPresentationTests(unittest.TestCase):
+    """Presentation is best-effort and ordered behind the typed bridge."""
+
+    URL = "http://127.0.0.1:8468"
+
+    def test_no_open_disables_presentation_entirely(self):
+        with patch.dict(os.environ, {"BUSTER_NO_OPEN": "1"}):
+            opened, reason = open_ui(self.URL)
+        self.assertFalse(opened)
+        self.assertIn("BUSTER_NO_OPEN", reason)
+
+    def test_compatible_api_opener_still_wins_when_present(self):
+        with patch("shutil.which", return_value="/usr/bin/termux-api"), \
+             patch("subprocess.run") as runner, \
+             patch("buster.launch._present_via_bridge") as bridge:
+            opened, reason = open_ui(self.URL)
+        self.assertTrue(opened)
+        self.assertIn("termux-api", reason)
+        bridge.assert_not_called()
+        runner.assert_called_once()
+
+    def test_absent_opener_falls_through_to_the_typed_bridge(self):
+        with patch("shutil.which", return_value=None), \
+             patch("buster.launch._present_via_bridge",
+                   return_value=(True, "presented via the bridge")) as bridge:
+            opened, reason = open_ui(self.URL)
+        self.assertTrue(opened)
+        self.assertIn("bridge", reason)
+        bridge.assert_called_once_with(self.URL)
+
+    def test_bridge_success_counts_as_presented(self):
+        with patch("shutil.which", return_value=None), \
+             patch("buster.launch._present_via_bridge", return_value=(True, "ok")):
+            opened, _ = open_ui(self.URL)
+        self.assertTrue(opened)
+
+    def test_bridge_failure_falls_through_to_the_printed_url(self):
+        with patch("shutil.which", return_value=None), \
+             patch("buster.launch._present_via_bridge",
+                   return_value=(False, "bridge refused")):
+            opened, reason = open_ui(self.URL)
+        self.assertFalse(opened)
+        self.assertIn("printed URL", reason)
+
+    def test_presentation_failure_never_fails_the_launch(self):
+        install = tempfile.mkdtemp()
+        with patch("buster.launch.ensure_bootstrap", return_value={}), \
+             patch("buster.launch.ensure_runtime",
+                   return_value={"action": "started", "pid": 1}), \
+             patch("buster.launch.ensure_gui",
+                   return_value={"action": "started", "url": self.URL}), \
+             patch("buster.launch.open_ui", return_value=(False, "boom")):
+            result = launch(install=install, open_browser=True)
+        # The runtime and GUI came up; only presentation failed.
+        self.assertEqual(result["runtime"]["pid"], 1)
+        self.assertFalse(result["opened"])
+        self.assertEqual(result["open_reason"], "boom")
+
+
+class PresentBridgeTests(unittest.TestCase):
+    """`_present_via_bridge` invokes the typed `present` verb, nothing else."""
+
+    def test_non_loopback_targets_are_refused_without_invoking_anything(self):
+        with patch("subprocess.run") as runner:
+            opened, reason = _present_via_bridge("https://evil.example")
+        self.assertFalse(opened)
+        self.assertIn("non-loopback", reason)
+        runner.assert_not_called()
+
+    def test_bridge_is_invoked_with_the_argument_free_present_verb(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=b'{"verb": "present", "ok": true, "ready": true, "url": "http://127.0.0.1:8468"}',
+            stderr=b"")
+        with patch("subprocess.run", return_value=completed) as runner:
+            opened, reason = _present_via_bridge("http://127.0.0.1:8468")
+        self.assertTrue(opened)
+        self.assertIn("bridge", reason)
+        argv = list(runner.call_args[0][0])
+        # Exactly the typed verb and nothing else: no URL, path, argv, env or
+        # cwd is forwarded to the host.
+        self.assertEqual(argv[1:], ["-m", "buster.cli", "exec", "present"])
+        self.assertNotIn("http://127.0.0.1:8468", argv)
+        self.assertEqual(len(argv), 5)
+
+    def test_unready_document_is_not_treated_as_presented(self):
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0,
+            stdout=b'{"verb": "present", "ok": true, "ready": false, "error": "runtime offline"}',
+            stderr=b"")
+        with patch("subprocess.run", return_value=completed):
+            opened, reason = _present_via_bridge("http://127.0.0.1:8468")
+        self.assertFalse(opened)
+        self.assertIn("runtime offline", reason)
+
+    def test_nonzero_exit_and_unparsable_output_are_bounded_failures(self):
+        for completed in (
+                subprocess.CompletedProcess(args=[], returncode=1, stdout=b"", stderr=b"refused"),
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=b"not json", stderr=b"")):
+            with patch("subprocess.run", return_value=completed):
+                opened, _ = _present_via_bridge("http://127.0.0.1:8468")
+            self.assertFalse(opened)
+
+    def test_launcher_failure_is_bounded(self):
+        with patch("subprocess.run", side_effect=OSError("no such file")):
+            opened, reason = _present_via_bridge("http://127.0.0.1:8468")
+        self.assertFalse(opened)
+        self.assertIn("unavailable", reason)
 
 
 if __name__ == "__main__":

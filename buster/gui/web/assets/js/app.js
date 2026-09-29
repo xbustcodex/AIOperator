@@ -3,7 +3,7 @@
 import { api } from "./api.js";
 import { Store, orbStateFor } from "./state.js";
 import { OrbController, renderOrb } from "./orb.js";
-import { routesFor, resolveRoute, routeFromScreen } from "./nav.js";
+import { routesFor, resolveRoute, routeFromScreen, href, ONBOARDING_AREA } from "./nav.js";
 import { renderScreen } from "./screens/index.js";
 
 const store = new Store();
@@ -110,12 +110,19 @@ window.orb = orb;
 
 async function route() {
   const boot = store.get("boot") || {};
-  const route = resolveRoute(window.location.hash, boot);
-  const target = routeFromScreen(route.screen, boot);
+  const resolved = resolveRoute(window.location.hash, boot);
+  let target = routeFromScreen(resolved.screen, boot);
 
   if (!store.get("onboarded") && target.screen !== "onboarding" && target.screen !== "advanced") {
-    window.location.hash = "/onboarding";
-    return;
+    // A fresh install belongs on onboarding. Assigning the hash alone is not
+    // enough: when the document already carries that hash the browser emits
+    // no hashchange, so returning here would strand the loading markup with
+    // nothing left to re-enter it. Adopt the target and render, syncing the
+    // hash only so the URL stays truthful.
+    target = ONBOARDING_AREA;
+    if (window.location.hash !== href(ONBOARDING_AREA.id)) {
+      window.location.hash = href(ONBOARDING_AREA.id);
+    }
   }
 
   for (const b of els.nav().querySelectorAll(".nav-item")) {

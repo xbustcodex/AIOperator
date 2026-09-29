@@ -1,0 +1,16 @@
+# Gradle / build output
+.gradle/
+build/
+local.properties
+captures/
+
+# Signing material must never be committed: Buster's release identity is its
+# own, separate from every other Prime Tech product.
+signing.properties
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+.kotlin/

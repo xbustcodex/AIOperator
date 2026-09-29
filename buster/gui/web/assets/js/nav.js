@@ -1,5 +1,16 @@
 /* Buster GUI — navigation model (DOM-free, testable). */
 
+/* The first-run welcome area. It is a real route -- `resolveRoute` and
+   `routeFromScreen` must both resolve it, or a fresh install redirects to
+   `#/onboarding` and the redirect falls back to Home, leaving the app in its
+   loading markup forever. It is deliberately NOT in the nav track: onboarding
+   is something a new install passes through, not somewhere it goes, so
+   `hidden` keeps it out of `routesFor()` without making it unresolvable. */
+export const ONBOARDING_AREA = {
+  id: "onboarding", label: "Welcome", screen: "onboarding",
+  icon: "check", hidden: true,
+};
+
 export const NAV_AREAS = [
   { id: "home", label: "Home", screen: "home", icon: "home" },
   { id: "talk", label: "Talk", screen: "chat", icon: "chat" },
@@ -14,11 +25,13 @@ export const NAV_AREAS = [
   { id: "updates", label: "Updates", screen: "updates", icon: "download" },
   { id: "settings", label: "Settings", screen: "settings", icon: "gear" },
   { id: "advanced", label: "Advanced", screen: "advanced", icon: "code", advanced: true },
+  ONBOARDING_AREA,
 ];
 
 export function routesFor(boot) {
   const showAdvanced = !!(boot && boot.advanced && boot.advanced.enabled);
-  return NAV_AREAS.filter((area) => !area.advanced || showAdvanced);
+  return NAV_AREAS.filter(
+    (area) => !area.hidden && (!area.advanced || showAdvanced));
 }
 
 export function resolveRoute(hash, boot) {

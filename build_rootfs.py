@@ -315,8 +315,18 @@ BUSTER_EXEC_MARKERS = (
     "SERVICE_NAME = re.compile",
     "READ_VERBS = (",
     "SERVICE_VERBS = (",
+    "PRESENT_VERB = ",
     "def is_valid_service_name",
     "def exec_main",
+)
+
+#: Every verb the closed `buster exec` vocabulary must declare, checked
+#: against the packaged parser's bytes rather than the source tree. The
+#: vocabulary is nine operations: five reads, three service controls and
+#: `present`, the host-owned presentation request.
+BUSTER_EXEC_VERBS = (
+    "status", "services", "capabilities", "health", "ping",
+    "service-start", "service-restart", "service-status", "present",
 )
 
 #: Constructs that would turn the closed-vocabulary bridge into a generic
@@ -429,6 +439,10 @@ def verify_buster_layer(root: Rootfs, artifact_path: str) -> dict:
         check("exec:parser-markers", not missing,
               "closed vocabulary + service-name grammar"
               if not missing else f"missing: {missing}")
+        absent_verbs = [v for v in BUSTER_EXEC_VERBS if f'"{v}"' not in parser]
+        check("exec:closed-vocabulary", not absent_verbs,
+              "all 9 typed operations present in the packaged parser"
+              if not absent_verbs else f"missing: {absent_verbs}")
         passthrough = [c for c in BUSTER_EXEC_PASSTHROUGH if c in parser]
         check("exec:no-passthrough", not passthrough,
               "no shell/eval passthrough"

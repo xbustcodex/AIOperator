@@ -5,6 +5,105 @@ All notable changes to Buster OS are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.4] - 2026-09-29
+
+Canary release candidate closing the typed `read(view)` compatibility gap. Deliberately
+narrow: it adds only the guest-side half of the accepted 5B.1 read-only contract.
+
+### Added — typed `read(view)`
+
+- **`read(view)`** joins the closed `buster exec` vocabulary, which is now eleven
+  operations: the ten accepted ones plus `read`. The view is drawn from a closed
+  enum — `goals`, `memory`, `attention`, `activity`, `device`, `settings`,
+  `jobs` — and is resolved before the install path is resolved or the runtime is
+  touched, so an arbitrary string can never reach the runtime.
+- **Buster remains the inner authority.** `read(view)` delegates to the existing
+  bounded `intel_view` surface; it does not open state files. Neither TerminalP
+  nor PRootDistro interprets any view.
+- **Results are structured**, carrying `buster.view/1`, the requested view and a
+  correlation id. Wrong arity, an unknown view and a traversal string are all
+  refused at parse time with a typed error and exit code 2.
+- **`deployment` is not a guest verb.** It is answered host-side by PRootDistro
+  from the deployment record it already owns, so it works against 0.4.3.
+
+### Compatibility
+
+- **0.4.3 remains the accepted reference artifact** and is unmodified.
+- `deployment` is supported by 0.4.3 and later.
+- `read(view)` requires 0.4.4 or later; against an older runtime a caller
+  receives a typed *unsupported runtime* failure, never a wrong or empty answer.
+
+### Not in this release
+
+`runtime-control`, `write`, `import`, `export`, `events`, and any generic
+execute/shell/path/argv surface remain unimplemented and unauthorized.
+
+## [0.4.3] - 2026-09-28
+
+Canary release carrying the fresh-install GUI onboarding repair and the typed
+`present` presentation operation. The accepted 0.4.2 release artifact remains
+immutable and untouched.
+
+### Fixed — fresh-install consumer UI no longer stalls at "Waking Buster…"
+
+- **Root cause**: `onboarding` was registered as a screen but was absent from
+  `NAV_AREAS`, so `resolveRoute("#/onboarding")` could not resolve it and fell
+  back to Home. `route()` redirects a non-onboarded install to `#/onboarding`
+  and returns; the redirect resolved to Home, the guard ran again, and
+  assigning a hash the document already had emitted no `hashchange`. The app
+  never reached `renderScreen` and stayed in its loading markup indefinitely,
+  while the runtime and every API endpoint were healthy.
+- **Repair** (`buster/gui/web/assets/js/nav.js`): `onboarding` is now a real
+  route (`ONBOARDING_AREA`) that `resolveRoute` and `routeFromScreen` both
+  resolve, marked `hidden` so it stays out of the nav track. It is something a
+  new install passes through, not somewhere it goes, and the visible nav track
+  is unchanged for onboarded installations.
+- **Repair** (`buster/gui/web/assets/js/app.js`): the fresh-install guard
+  adopts the onboarding target and renders, syncing the hash for the URL
+  rather than depending on a `hashchange` that may never fire.
+- **Coverage** (`buster/tests/gui_frontend/`, run by
+  `buster/tests/test_gui_frontend.py` inside the existing unittest gate): the
+  DOM harness models the no-op-hash behaviour faithfully, so these tests fail
+  against the 0.4.2 sources and pass against the repair.
+
+### Added — typed `present` operation for consumer presentation
+
+- **The closed `buster exec` vocabulary is now nine operations** (was eight):
+  `status`, `services`, `capabilities`, `health`, `ping`, `service-start`,
+  `service-restart`, `service-status`, `present`.
+- **Guest** (`buster/exec.py`): `present` is argument-free and names no
+  target. It reports only that Buster's own runtime is serving its local
+  loopback interface, so a guest can never direct the host to open an
+  arbitrary URL, package, activity or Intent string. Wrong arity is rejected
+  before the install path is resolved or the runtime is touched.
+- **Host dispatcher** (`proot-distro`): `present` joins the explicit allowed
+  vocabulary; every argument-bearing form is refused.
+- **TerminalP** (`BusterBridgeService`, `OperationRegistry`): `present` is a
+  typed Binder operation (`busterPresent`) behind the same caller
+  UID/package/certificate authentication as every other operation. TerminalP
+  constructs and fires the Android action itself against a host-fixed
+  loopback target, so presentation is never steerable by guest or caller.
+  Failures are bounded and structured (`PRESENTATION_REFUSED`,
+  `PRESENTATION_FAILED`).
+- **Launch** (`buster/launch.py`): `open_ui()` now tries, in order, a host
+  Termux-class `*-api open-url` binary when one is actually available, then
+  the authenticated typed `present` bridge, then a Linux desktop opener, then
+  the printed URL. Presentation remains best-effort: a failure never converts
+  a successful runtime/GUI launch into a failure, and the printed URL remains
+  the final recovery path.
+
+### Known issue (technical debt, not fixed here)
+
+- `GET /api/bootstrap` calls `daemon.intel_view("world")` outside the
+  `_rpc` guard (`buster/gui/server.py`). Unlike its neighbours it is not
+  wrapped, so an RPC failure on that call propagates to the generic
+  exception handler and returns HTTP 500 rather than the typed 503 the
+  frontend understands. It is not the cause of the fresh-install stall
+  above — that endpoint returned 200 in under a second on the device — and
+  it is deliberately left unchanged rather than folded into the two repairs
+  above. Worth a narrowly scoped follow-up: wrap the call in `_rpc` and
+  default `host` to `"unknown"`.
+
 ## [0.4.2] - 2026-09-27
 
 ### Added — typed `buster exec` bridge surface

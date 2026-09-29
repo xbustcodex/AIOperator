@@ -174,8 +174,11 @@ class ArchAwareVerifyTests(unittest.TestCase):
         root._write_metadata(
             "opt/buster/lib/buster/exec.py",
             'SERVICE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*")\n'
-            'READ_VERBS = ("status", "services")\n'
-            'SERVICE_VERBS = ("service-start",)\n'
+            'READ_VERBS = ("status", "services", "capabilities", "health",\n'
+            '               "ping", "present")\n'
+            'SERVICE_VERBS = ("service-start", "service-restart",\n'
+            '                 "service-status")\n'
+            'PRESENT_VERB = "present"\n'
             "def is_valid_service_name(name):\n    return True\n"
             "def exec_main(args, out=None):\n    return 0\n")
         root._write_metadata(

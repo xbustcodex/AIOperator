@@ -28,6 +28,7 @@ Lifecycle behaviours covered by :func:`launch`:
 - failed RPC readiness-> LaunchError with recovery guidance
 """
 
+import json
 import logging
 import os
 import subprocess
@@ -175,12 +176,54 @@ def ensure_gui(install: str, port: int = DEFAULT_GUI_PORT,
         f"'python -m buster.gui.server --install-path {install}' to see logs.")
 
 
+def _present_via_bridge(url: str) -> tuple:
+    """Ask the authenticated TerminalP bridge to present the interface.
+
+    PRoot is a filesystem/uid emulator, not an Android Binder/Intent
+    transport: the guest has no route to the host's activity manager, and no
+    host API binary is necessarily visible inside the guest. So presentation
+    is delegated to the one sanctioned integration boundary -- the typed
+    ``present`` operation of the authenticated TerminalP bridge -- which
+    constructs the bounded Android action itself.
+
+    ``present`` takes no argument. The URL is checked here purely to refuse
+    presenting something that is not this runtime's own loopback interface;
+    it is never forwarded to the host.
+    """
+    if not url.startswith("http://127.0.0.1:"):
+        return False, "refusing to present a non-loopback interface"
+    import sys as _sys
+    try:
+        completed = subprocess.run(
+            [_sys.executable, "-m", "buster.cli", "exec", "present"],
+            timeout=20.0, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"present bridge unavailable ({type(exc).__name__})"
+    if completed.returncode != 0:
+        return False, "present bridge refused the request"
+    try:
+        document = json.loads(completed.stdout.decode("utf-8", "replace"))
+    except ValueError:
+        return False, "present bridge returned no usable document"
+    if not document.get("ready"):
+        return False, f"present bridge not ready: {document.get('error')}"
+    return True, "presented via the authenticated TerminalP bridge"
+
+
 def open_ui(url: str) -> tuple:
     """Best-effort, deployment-bound presentation of the local UI.
 
-    Buster stays portable: Android/TerminalP presentation is delegated to the
-    host's Termux-class ``*-api open-url``; Linux desktops use ``xdg-open``;
-    otherwise the URL is printed. Failure to open never fails the launch.
+    Ordering, most specific integration first:
+
+    1. a host Termux-class ``*-api open-url`` binary, when one is actually
+       available to the guest;
+    2. the authenticated, typed ``present`` operation of the TerminalP
+       bridge -- the sole Buster->Android integration boundary;
+    3. a Linux desktop opener;
+    4. printing the URL, which is always the final recovery path.
+
+    Presentation is never load-bearing: every failure falls through, and a
+    successful runtime/GUI launch is never converted into a failure.
     """
     if os.environ.get("BUSTER_NO_OPEN"):
         return False, "opening disabled (BUSTER_NO_OPEN)"
@@ -194,6 +237,11 @@ def open_ui(url: str) -> tuple:
             return True, f"{host_bin} open-url {url}"
         except (OSError, subprocess.TimeoutExpired):
             pass
+
+    presented, reason = _present_via_bridge(url)
+    if presented:
+        return True, reason
+
     for opener in ("xdg-open", "htmlview", "gio"):
         path = shutil.which(opener)
         if path:
@@ -204,7 +252,7 @@ def open_ui(url: str) -> tuple:
             except OSError:
                 continue
     print(f"\nBuster is ready: open {url}\n")
-    return False, "no opener available; printed URL"
+    return False, f"no opener available; printed URL ({reason})"
 
 
 def launch(install: str = None, port: int = DEFAULT_GUI_PORT,

@@ -433,6 +433,8 @@ class FinalArtifactExecSurfaceTests(unittest.TestCase):
         self.assertTrue(checks["exec:parser-markers"]["ok"])
         self.assertTrue(checks["exec:no-passthrough"]["ok"])
         self.assertTrue(checks["exec:verb-registered"]["ok"])
+        self.assertTrue(checks["exec:closed-vocabulary"]["ok"],
+                        checks["exec:closed-vocabulary"]["detail"])
         self.assertTrue(checks["exec:rpc-ops"]["ok"])
 
     def test_packaged_parser_carries_the_closed_vocabulary_and_grammar(self):
@@ -446,6 +448,7 @@ class FinalArtifactExecSurfaceTests(unittest.TestCase):
         self.assertIn("service-start", source)
         self.assertIn("service-restart", source)
         self.assertIn("service-status", source)
+        self.assertIn("present", source)
         self.assertIn("exec_main", source)
 
     def test_archive_version_agrees_with_the_release(self):

@@ -84,6 +84,94 @@ class ExecVocabularyTests(unittest.TestCase):
                 self.assertEqual(code, 2, argv)
 
 
+class PresentVerbTests(unittest.TestCase):
+    """`present` requests host presentation and names no target."""
+
+    def test_present_is_part_of_the_authoritative_vocabulary(self):
+        self.assertIn("present", bexec.ALL_VERBS)
+        self.assertIn("present", bexec._READ_DOCS)
+        # Nine accepted operations plus read(view), added in 5B.1.
+        self.assertEqual(len(bexec.ALL_VERBS), 11)
+        # The eight pre-existing verbs keep their meaning.
+        for verb in ("status", "services", "capabilities", "health", "ping",
+                     "service-start", "service-restart", "service-status"):
+            self.assertIn(verb, bexec.ALL_VERBS, verb)
+
+    def test_present_emits_a_structured_document_when_offline(self):
+        code, stdout = _run(["present"])
+        self.assertEqual(code, 0)
+        doc = _json_out(stdout)
+        self.assertEqual(doc["verb"], "present")
+        self.assertTrue(doc["ok"])
+        self.assertFalse(doc["ready"])
+        self.assertIsNone(doc["url"])
+        self.assertTrue(doc["error"])
+
+    def test_present_reports_readiness_when_the_runtime_is_running(self):
+        remote = mock.Mock()
+        remote.status.return_value = {"state": "running"}
+        with mock.patch.object(bexec, "_client", return_value=("client", remote)):
+            code, stdout = _run(["present"])
+        self.assertEqual(code, 0)
+        doc = _json_out(stdout)
+        self.assertTrue(doc["ready"])
+        self.assertTrue(doc["online"])
+        # The target is loopback-only and derived from Buster's own state.
+        self.assertTrue(doc["url"].startswith("http://127.0.0.1:"),
+                        doc["url"])
+
+    def test_present_refuses_a_non_running_runtime(self):
+        remote = mock.Mock()
+        remote.status.return_value = {"state": "stopped"}
+        with mock.patch.object(bexec, "_client", return_value=("client", remote)):
+            code, stdout = _run(["present"])
+        self.assertEqual(code, 0)
+        doc = _json_out(stdout)
+        self.assertFalse(doc["ready"])
+        self.assertIsNone(doc["url"])
+        self.assertIn("stopped", doc["error"])
+
+    def test_present_survives_an_rpc_failure_without_crashing(self):
+        from buster.runtime import RuntimeRpcError
+        remote = mock.Mock()
+        remote.status.side_effect = RuntimeRpcError("rpc timed out")
+        with mock.patch.object(bexec, "_client", return_value=("client", remote)):
+            code, stdout = _run(["present"])
+        self.assertEqual(code, 0)
+        doc = _json_out(stdout)
+        self.assertFalse(doc["ready"])
+        self.assertIn("RuntimeRpcError", doc["error"])
+
+    def test_present_takes_no_arguments_of_any_form(self):
+        hostile = [
+            ["present", "http://evil.example"],
+            ["present", "http://127.0.0.1:8468"],
+            ["present", "--url", "http://evil.example"],
+            ["present", "-c", "am start -n com.evil/.Steal"],
+            ["present", "buster-runtime"],
+            ["present", "http://127.0.0.1:8468", "extra"],
+        ]
+        for argv in hostile:
+            code, _ = _run(argv)
+            self.assertEqual(code, 2, argv)
+
+    def test_present_with_arguments_never_touches_the_runtime(self):
+        with mock.patch.object(bexec, "_client",
+                               side_effect=AssertionError("runtime touched")):
+            for argv in (["present", "http://evil.example"],
+                         ["present", "-c", "id"],
+                         ["present", "buster-runtime"]):
+                code, _ = _run(argv)
+                self.assertEqual(code, 2, argv)
+
+    def test_present_does_not_add_a_generic_command_passthrough(self):
+        # The closed vocabulary stays closed: no verb forwards argv, a path,
+        # a URL, an environment or a shell string to the host.
+        for verb in ("exec", "run", "shell", "open", "open-url", "am"):
+            self.assertNotIn(verb, bexec.ALL_VERBS, verb)
+        for verb in bexec.ALL_VERBS:
+            self.assertRegex(verb, r"^[a-z][a-z-]*$", verb)
+
 # -- mirrored service-name grammar ---------------------------------------------
 
 VALID_NAMES = (
